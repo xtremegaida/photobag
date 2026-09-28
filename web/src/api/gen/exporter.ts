@@ -91,6 +91,14 @@ export interface ManifestEntry {
   takenOffset?: string;
   tags: string[];
   scores?: { [key: string]: ScoreDetail};
+  /**
+   * Analysis results: the caption, the text found in the image ("" when
+   * there was none), Danbooru tags and the category ("Main / Sub").
+   */
+  caption?: string;
+  ocr?: string;
+  danbooru?: string[];
+  category?: string;
 }
 /**
  * ScoreDetail is an exported per-metric score.

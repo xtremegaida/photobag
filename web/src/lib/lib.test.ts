@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createBatcher } from "../api/batcher";
 import { formatBytes, formatTaken, percent } from "./format";
+import { eta, formatDuration } from "./pipelines";
 import { galleryParams, hasFilters, parseGallery } from "./query-url";
 import { rangeBetween, toggled } from "./selection";
 
@@ -48,6 +49,13 @@ describe("gallery URL state", () => {
     expect(hasFilters({})).toBe(false);
     expect(hasFilters({ scope: "trash" })).toBe(false);
     expect(hasFilters({ untagged: true })).toBe(true);
+    expect(hasFilters({ text: "  " })).toBe(false);
+    expect(hasFilters({ text: "dog" })).toBe(true);
+  });
+  it("keeps the description search", () => {
+    const state = parseGallery(new URLSearchParams('text="long hair" beach'));
+    expect(state.query).toEqual({ text: '"long hair" beach' });
+    expect(parseGallery(galleryParams(state))).toEqual(state);
   });
 });
 
@@ -60,6 +68,14 @@ describe("format", () => {
   it("formats EXIF times", () => {
     expect(formatTaken("2019-07-04T15:22:10", "+02:00")).toBe("2019-07-04 15:22:10 (UTC+02:00)");
     expect(formatTaken(undefined)).toBe("–");
+  });
+  it("formats durations and estimates time left", () => {
+    expect(formatDuration(4_400)).toBe("4s");
+    expect(formatDuration(125_000)).toBe("2m 5s");
+    expect(formatDuration(3_720_000)).toBe("1h 2m");
+    expect(eta(Date.now() - 10_000, 1, 3)).toBe("20s");
+    expect(eta(undefined, 1, 3)).toBeUndefined();
+    expect(eta(Date.now(), 3, 3)).toBeUndefined();
   });
   it("formats percentages", () => {
     expect(percent(0.9)).toBe("90%");

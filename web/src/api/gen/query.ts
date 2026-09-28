@@ -27,6 +27,12 @@ export interface ImageQuery {
    */
   nameGlob?: string;
   /**
+   * Text searches analysis results (captions, text found in images,
+   * Danbooru tags, categories), ignoring case. Every word must occur;
+   * "quoted phrases" match as a whole.
+   */
+  text?: string;
+  /**
    * IDs restricts the result to these images (a UI selection).
    */
   ids?: number /* int64 */[];

@@ -3,6 +3,7 @@ import { useHotkeys } from "@mantine/hooks";
 import { IconChevronLeft, IconChevronRight, IconX } from "@tabler/icons-react";
 import { useEffect } from "react";
 import { preload, previewUrl } from "../api/client";
+import { useImage } from "../api/hooks";
 import { ImageInfo } from "./ImageInfo";
 import classes from "./Lightbox.module.css";
 
@@ -19,6 +20,7 @@ const SIZE = window.devicePixelRatio > 1.5 || window.innerWidth > 1800 ? 2560 : 
 export function Lightbox({ ids, index, onIndex, onClose }: LightboxProps) {
   const open = index !== null && index >= 0 && index < ids.length;
   const id = open ? ids[index!] : undefined;
+  const { data: im } = useImage(id);
   const go = (d: number) => {
     if (!open) return;
     const next = index! + d;
@@ -45,7 +47,7 @@ export function Lightbox({ ids, index, onIndex, onClose }: LightboxProps) {
       {id !== undefined && (
         <div className={classes.root}>
           <div className={classes.stage} onClick={(e) => e.target === e.currentTarget && onClose()}>
-            <img key={id} src={previewUrl(id, SIZE)} alt="" />
+            <img key={id} src={previewUrl(id, SIZE)} alt={im?.caption || im?.name || ""} />
             <span className={classes.counter}>
               {index! + 1} / {ids.length}
             </span>

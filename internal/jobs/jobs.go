@@ -1,5 +1,6 @@
 // Package jobs runs long operations (import, export, backup, dedup scans,
-// compaction) one at a time in the background, publishing progress.
+// compaction, model analysis) in the background, publishing progress. Jobs
+// run one at a time per lane.
 package jobs
 
 import (
@@ -45,20 +46,26 @@ type Func func(ctx context.Context, report func(progress any, message string)) (
 
 type entry struct {
 	job    Job
+	lane   string
 	fn     Func
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-// Manager executes jobs sequentially.
+// MainLane runs jobs that touch much of the bag (imports, exports,
+// backups); other lanes run beside it.
+const MainLane = "main"
+
+// Manager executes jobs sequentially within each lane.
 type Manager struct {
 	mu      sync.Mutex
 	entries map[string]*entry
 	order   []string
-	queue   chan *entry
+	lanes   map[string]chan *entry
+	ctx     context.Context
 	events  *events.Broker
 	log     *slog.Logger
-	done    chan struct{}
+	wg      sync.WaitGroup
 }
 
 // maxHistory is how many finished jobs are remembered.
@@ -68,34 +75,49 @@ const maxHistory = 50
 func NewManager(ctx context.Context, ev *events.Broker, log *slog.Logger) *Manager {
 	m := &Manager{
 		entries: map[string]*entry{},
-		queue:   make(chan *entry, 256),
+		lanes:   map[string]chan *entry{},
+		ctx:     ctx,
 		events:  ev,
 		log:     log,
-		done:    make(chan struct{}),
 	}
-	go m.loop(ctx)
+	m.mu.Lock()
+	m.lane(MainLane)
+	m.mu.Unlock()
 	return m
 }
 
-func (m *Manager) loop(ctx context.Context) {
-	defer close(m.done)
+// lane returns a lane's queue, starting its worker (mu held).
+func (m *Manager) lane(name string) chan *entry {
+	q, ok := m.lanes[name]
+	if ok {
+		return q
+	}
+	q = make(chan *entry, 256)
+	m.lanes[name] = q
+	m.wg.Add(1)
+	go m.loop(q)
+	return q
+}
+
+func (m *Manager) loop(q chan *entry) {
+	defer m.wg.Done()
 	for {
 		select {
-		case <-ctx.Done():
+		case <-m.ctx.Done():
 			m.mu.Lock()
 			for _, e := range m.entries {
 				e.cancel()
 			}
 			m.mu.Unlock()
 			return
-		case e := <-m.queue:
+		case e := <-q:
 			m.run(e)
 		}
 	}
 }
 
 // Wait blocks until the manager has stopped (after its context ended).
-func (m *Manager) Wait() { <-m.done }
+func (m *Manager) Wait() { m.wg.Wait() }
 
 func (m *Manager) run(e *entry) {
 	started := false
@@ -157,23 +179,29 @@ func (m *Manager) update(e *entry, fn func(*Job)) {
 	m.events.Publish(events.Event{Type: "job", Data: snap})
 }
 
-// Submit queues a job and returns its snapshot.
+// Submit queues a job on the main lane and returns its snapshot.
 func (m *Manager) Submit(kind, title string, fn Func) Job {
+	return m.SubmitTo(MainLane, kind, title, fn)
+}
+
+// SubmitTo queues a job on a lane; lanes run beside each other.
+func (m *Manager) SubmitTo(lane, kind, title string, fn Func) Job {
 	var b [6]byte
 	rand.Read(b[:])
 	ctx, cancel := context.WithCancel(context.Background())
 	e := &entry{
-		job: Job{ID: hex.EncodeToString(b[:]), Kind: kind, Title: title, Status: Queued, CreatedAt: time.Now().UnixMilli()},
-		fn:  fn, ctx: ctx, cancel: cancel,
+		job:  Job{ID: hex.EncodeToString(b[:]), Kind: kind, Title: title, Status: Queued, CreatedAt: time.Now().UnixMilli()},
+		lane: lane, fn: fn, ctx: ctx, cancel: cancel,
 	}
 	m.mu.Lock()
 	m.entries[e.job.ID] = e
 	m.order = append(m.order, e.job.ID)
 	m.prune()
 	snap := e.job
+	q := m.lane(lane)
 	m.mu.Unlock()
 	m.events.Publish(events.Event{Type: "job", Data: snap})
-	m.queue <- e
+	q <- e
 	return snap
 }
 
@@ -236,13 +264,22 @@ func (m *Manager) Cancel(id string) bool {
 	return true
 }
 
-// Busy reports whether any job is queued or running.
-func (m *Manager) Busy() bool {
+// Busy reports whether any job is queued or running (on the given lanes,
+// or on any lane when none are given).
+func (m *Manager) Busy(lanes ...string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, e := range m.entries {
-		if e.job.Status == Queued || e.job.Status == Running {
+		if e.job.Status != Queued && e.job.Status != Running {
+			continue
+		}
+		if len(lanes) == 0 {
 			return true
+		}
+		for _, l := range lanes {
+			if e.lane == l {
+				return true
+			}
 		}
 	}
 	return false

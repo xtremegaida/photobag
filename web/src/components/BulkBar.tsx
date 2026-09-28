@@ -1,6 +1,6 @@
 import { Button, Group, Paper, Popover, Stack, TagsInput, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconChartBar, IconRestore, IconTagMinus, IconTagPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { IconChartBar, IconRestore, IconSparkles, IconTagMinus, IconTagPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { errorMessage } from "../api/client";
@@ -106,6 +106,9 @@ export function BulkBar({ allIds, trash }: { allIds: number[]; trash?: boolean }
               <TagAction mode="remove" ids={ids} />
               <Button size="xs" variant="light" leftSection={<IconUpload size={16} />} onClick={() => navigate("/export?source=selection")}>
                 Export
+              </Button>
+              <Button size="xs" variant="light" leftSection={<IconSparkles size={16} />} onClick={() => navigate("/analysis?source=selection")}>
+                Analyse
               </Button>
               <Button
                 size="xs"

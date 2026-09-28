@@ -7,6 +7,7 @@ import { errorMessage, originalUrl } from "../api/client";
 import { useImageDetail, useRename, useRestore, useTrash } from "../api/hooks";
 import type { Image } from "../api/types";
 import { formatBytes, formatDate, formatScore, formatTaken } from "../lib/format";
+import { AnalysisResults } from "./AnalysisResults";
 import { TagEditor } from "./TagEditor";
 
 function NameEditor({ image }: { image: Image }) {
@@ -75,6 +76,7 @@ export function ImageInfo({ id, onTrashed }: { id: number; onTrashed?: () => voi
         </Text>
         <TagEditor imageIds={[im.id]} value={im.tags} />
       </div>
+      <AnalysisResults id={im.id} analyses={data.analyses ?? []} />
       {im.deletedAt ? (
         <Badge color="orange" variant="light">
           In trash{im.mergedInto ? ` · duplicate of #${im.mergedInto}` : ""}

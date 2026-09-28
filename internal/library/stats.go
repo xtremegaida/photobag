@@ -17,6 +17,7 @@ type Stats struct {
 	Metrics       int64         `json:"metrics"`
 	Runs          int64         `json:"runs"`
 	Comparisons   int64         `json:"comparisons"`
+	Analysed      int64         `json:"analysed"` // images with at least one analysis result
 	Blobs         int64         `json:"blobs"`
 	OriginalBytes int64         `json:"originalBytes"`
 	File          bag.FileStats `json:"file"`
@@ -37,9 +38,10 @@ func GetStats(ctx context.Context, b *bag.Bag) (Stats, error) {
 		(SELECT count(*) FROM metrics),
 		(SELECT count(*) FROM score_runs),
 		(SELECT count(*) FROM comparisons WHERE winner IS NOT NULL),
+		(SELECT count(DISTINCT image_id) FROM analyses),
 		(SELECT count(*) FROM blobs),
 		(SELECT COALESCE(sum(size), 0) FROM blobs)`).Scan(
-		&s.Images, &s.Trashed, &s.Purged, &s.Tags, &s.Metrics, &s.Runs, &s.Comparisons, &s.Blobs, &s.OriginalBytes)
+		&s.Images, &s.Trashed, &s.Purged, &s.Tags, &s.Metrics, &s.Runs, &s.Comparisons, &s.Analysed, &s.Blobs, &s.OriginalBytes)
 	if err != nil {
 		return s, err
 	}

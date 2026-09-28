@@ -27,6 +27,10 @@ type ImageQuery struct {
 	// NameGlob is a case-insensitive glob on the image name. Plain text
 	// without * ? [ matches as a substring.
 	NameGlob string `json:"nameGlob,omitempty"`
+	// Text searches analysis results (captions, text found in images,
+	// Danbooru tags, categories), ignoring case. Every word must occur;
+	// "quoted phrases" match as a whole.
+	Text string `json:"text,omitempty"`
 	// IDs restricts the result to these images (a UI selection).
 	IDs   []int64 `json:"ids,omitempty"`
 	Scope Scope   `json:"scope,omitempty"`
@@ -56,7 +60,22 @@ func (q ImageQuery) glob() string {
 // IsEmpty reports whether the query has no filters (selects the whole scope).
 func (q ImageQuery) IsEmpty() bool {
 	return len(q.TagsAll) == 0 && len(q.TagsAny) == 0 && len(q.TagsNone) == 0 &&
-		!q.Untagged && strings.TrimSpace(q.NameGlob) == "" && len(q.IDs) == 0
+		!q.Untagged && strings.TrimSpace(q.NameGlob) == "" && len(q.IDs) == 0 && len(SearchTerms(q.Text)) == 0
+}
+
+// SearchTerms splits a search string into words and "quoted phrases".
+func SearchTerms(s string) []string {
+	var out []string
+	for i, part := range strings.Split(s, `"`) {
+		if i%2 == 1 { // inside quotes
+			if p := strings.TrimSpace(part); p != "" {
+				out = append(out, p)
+			}
+			continue
+		}
+		out = append(out, strings.Fields(part)...)
+	}
+	return out
 }
 
 func keys(names []string) []any {
@@ -105,6 +124,10 @@ func (q ImageQuery) Where(alias string) (string, []any) {
 		conds = append(conds, "pb_glob(?, "+a+"name)")
 		args = append(args, g)
 	}
+	for _, term := range SearchTerms(q.Text) {
+		conds = append(conds, "EXISTS (SELECT 1 FROM analyses an WHERE an.image_id = "+a+"id AND pb_contains(an.text, ?))")
+		args = append(args, term)
+	}
 	if len(q.IDs) > 0 {
 		js, _ := json.Marshal(q.IDs)
 		conds = append(conds, a+"id IN (SELECT value FROM json_each(?))")
@@ -136,6 +159,9 @@ func (q ImageQuery) Describe() string {
 	}
 	if g := strings.TrimSpace(q.NameGlob); g != "" {
 		parts = append(parts, "name "+q.glob())
+	}
+	if t := strings.TrimSpace(q.Text); t != "" {
+		parts = append(parts, fmt.Sprintf("described as %q", t))
 	}
 	if len(parts) == 0 {
 		return "all images"

@@ -69,6 +69,17 @@ func TestExportRoundTripAndBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	images := tree.Count("image", "exact-dup", "near-dup", "flat")
+	// One image carries analysis results for the manifest.
+	first, _ := library.ListIDs(ctx, b, query.ImageQuery{}, query.Sort{})
+	for _, w := range []library.AnalysisWrite{
+		{ImageID: first[0], Pipeline: library.PipelineCaption, Text: "A beach."},
+		{ImageID: first[0], Pipeline: library.PipelineOCR, Text: ""},
+		{ImageID: first[0], Pipeline: library.PipelineCategory, Text: "Nature / Beaches", Data: &library.AnalysisData{Main: "Nature", Sub: "Beaches"}},
+	} {
+		if _, err := library.WriteAnalysis(ctx, b, w); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	out := filepath.Join(dir, "out")
 	rep, err := Run(ctx, b, out, Options{Manifest: true}, nil)
@@ -89,12 +100,25 @@ func TestExportRoundTripAndBackup(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil || len(doc.Images) != images {
 		t.Fatalf("manifest: %v (%d entries)", err, len(doc.Images))
 	}
+	analysed := 0
 	for _, e := range doc.Images {
+		if e.Caption != "" {
+			analysed++
+			if e.Caption != "A beach." || e.OCR == nil || *e.OCR != "" || e.Category != "Nature / Beaches" {
+				t.Errorf("manifest analysis %+v", e)
+			}
+		} else if e.OCR != nil {
+			t.Errorf("unanalysed image has OCR text in the manifest: %+v", e)
+		}
 		got := sha(t, filepath.Join(out, filepath.FromSlash(e.File)))
 		want := sha(t, filepath.Join(src, filepath.FromSlash(e.OriginalPath)))
 		if got != want || got != e.SHA256 {
 			t.Errorf("%s: exported bytes differ from source %s", e.File, e.OriginalPath)
 		}
+	}
+
+	if analysed != 1 {
+		t.Errorf("%d manifest entries with analysis, want 1", analysed)
 	}
 
 	// Second export into the same folder, filtered by tag and keeping the

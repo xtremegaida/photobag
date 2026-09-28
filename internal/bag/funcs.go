@@ -30,9 +30,31 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	// pb_contains(text, term): case-insensitive substring search.
+	err = sqlite.RegisterDeterministicScalarFunction("pb_contains", 2,
+		func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+			text, _ := args[0].(string)
+			term, _ := args[1].(string)
+			if Contains(text, term) {
+				return int64(1), nil
+			}
+			return int64(0), nil
+		})
+	if err != nil {
+		panic(err)
+	}
 }
 
 var folder = cases.Fold()
+
+// searchForm folds s and treats underscores as spaces, so "long hair"
+// finds the Danbooru tag long_hair.
+func searchForm(s string) string { return strings.ReplaceAll(Fold(s), "_", " ") }
+
+// Contains reports whether term occurs in text, ignoring case.
+func Contains(text, term string) bool {
+	return strings.Contains(searchForm(text), searchForm(term))
+}
 
 // Fold returns the case-insensitive comparison form of s.
 func Fold(s string) string { return folder.String(norm.NFC.String(s)) }

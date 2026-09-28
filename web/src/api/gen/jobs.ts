@@ -4,7 +4,8 @@
 // source: jobs.go
 /*
 Package jobs runs long operations (import, export, backup, dedup scans,
-compaction) one at a time in the background, publishing progress.
+compaction, model analysis) in the background, publishing progress. Jobs
+run one at a time per lane.
 */
 
 /**
@@ -49,7 +50,12 @@ export interface Job {
  */
 export type Func = any;
 /**
- * Manager executes jobs sequentially.
+ * MainLane runs jobs that touch much of the bag (imports, exports,
+ * backups); other lanes run beside it.
+ */
+export const MainLane = "main";
+/**
+ * Manager executes jobs sequentially within each lane.
  */
 export interface Manager {
 }

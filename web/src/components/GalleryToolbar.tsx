@@ -16,13 +16,14 @@ import { useDebouncedCallback } from "@mantine/hooks";
 import {
   IconAdjustmentsHorizontal,
   IconArrowsShuffle,
+  IconFileText,
   IconSearch,
   IconSortAscending,
   IconSortDescending,
   IconX,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { useMetrics } from "../api/hooks";
+import { useMetrics, useStats } from "../api/hooks";
 import type { ImageQuery, Sort } from "../api/types";
 import { SORT_FIELDS } from "../lib/query-url";
 import { useTagNames } from "./TagEditor";
@@ -49,6 +50,11 @@ export function GalleryToolbar({ query, sort, onChange, thumbSize, onThumbSize, 
   const [search, setSearch] = useState(query.nameGlob ?? "");
   useEffect(() => setSearch(query.nameGlob ?? ""), [query.nameGlob]);
   const pushSearch = useDebouncedCallback((v: string) => onChange({ ...query, nameGlob: v || undefined }, sort), 300);
+  const { data: stats } = useStats();
+  const [text, setText] = useState(query.text ?? "");
+  useEffect(() => setText(query.text ?? ""), [query.text]);
+  const pushText = useDebouncedCallback((v: string) => onChange({ ...query, text: v.trim() ? v : undefined }, sort), 350);
+  const showText = !!stats?.analysed || !!query.text;
 
   const tagMode = query.tagsAny?.length ? "any" : "all";
   const included = tagMode === "any" ? (query.tagsAny ?? []) : (query.tagsAll ?? []);
@@ -94,6 +100,37 @@ export function GalleryToolbar({ query, sort, onChange, thumbSize, onThumbSize, 
         }
         w={230}
       />
+      {showText && (
+        <Tooltip label="Searches captions, text in images, Danbooru tags and categories. Use quotes for phrases." openDelay={600}>
+          <TextInput
+            placeholder="Search descriptions & text"
+            leftSection={<IconFileText size={16} />}
+            value={text}
+            onChange={(e) => {
+              setText(e.currentTarget.value);
+              pushText(e.currentTarget.value);
+            }}
+            rightSection={
+              text ? (
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  onClick={() => {
+                    setText("");
+                    onChange({ ...query, text: undefined }, sort);
+                  }}
+                  aria-label="Clear the description search"
+                >
+                  <IconX size={14} />
+                </ActionIcon>
+              ) : null
+            }
+            w={230}
+            aria-label="Search descriptions and text"
+          />
+        </Tooltip>
+      )}
       <Group gap={4} align="flex-end" wrap="nowrap">
         <MultiSelect
           placeholder={included.length ? "" : "Filter by tags"}

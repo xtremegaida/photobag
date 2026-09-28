@@ -2,6 +2,11 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClie
 import { createBatcher } from "./batcher";
 import { api } from "./client";
 import type {
+  Analysis,
+  AnalysisOptions,
+  AnalysisOutcome,
+  AnalysisPlan,
+  AnalysisSettingsView,
   FsListing,
   Image,
   ImageDetail,
@@ -9,6 +14,7 @@ import type {
   Job,
   Metric,
   Pair,
+  PipelineStats,
   Rankings,
   Resolution,
   Run,
@@ -35,6 +41,9 @@ export const qk = {
   scans: ["scans"] as const,
   scan: (id: string, t: number) => ["scan", id, t] as const,
   fs: (p: string) => ["fs", p] as const,
+  analysisSettings: ["analysis-settings"] as const,
+  analysisStats: ["analysis-stats"] as const,
+  analysisPlan: (o: AnalysisOptions) => ["analysis-plan", o] as const,
 };
 
 /** Maps server "changed" topics to the query keys they invalidate. */
@@ -45,6 +54,8 @@ const topicKeys: Record<string, string[]> = {
   metrics: ["metrics", "rankings", "detail", "ids"],
   runs: ["runs", "run", "metrics"],
   dedup: ["scans", "scan"],
+  analysis: ["detail", "image", "ids", "count", "stats", "analysis-stats", "analysis-plan"],
+  "analysis-settings": ["analysis-settings", "analysis-plan"],
 };
 
 export function invalidateTopics(qc: QueryClient, topics: string[]) {
@@ -151,6 +162,27 @@ export function useScan(id: string | undefined, threshold: number) {
   });
 }
 
+export function useAnalysisSettings() {
+  return useQuery({
+    queryKey: qk.analysisSettings,
+    queryFn: () => api.get<AnalysisSettingsView>("/api/analysis/settings"),
+    staleTime: 60_000,
+  });
+}
+
+export function useAnalysisStats() {
+  return useQuery({ queryKey: qk.analysisStats, queryFn: () => api.get<PipelineStats[]>("/api/analysis/stats") });
+}
+
+export function useAnalysisPlan(opts: AnalysisOptions, enabled = true) {
+  return useQuery({
+    queryKey: qk.analysisPlan(opts),
+    queryFn: () => api.post<AnalysisPlan>("/api/analysis/plan", opts),
+    enabled: enabled && opts.pipelines.length > 0,
+    placeholderData: keepPreviousData,
+  });
+}
+
 export function useFsList(path: string, enabled: boolean) {
   return useQuery({
     queryKey: qk.fs(path),
@@ -203,6 +235,29 @@ export function useResolve() {
     (v: { scanId: string; resolutions?: Resolution[]; applyAll?: boolean; threshold?: number }) =>
       api.post<{ trashed: number; resolved: number }>("/api/dedup/resolve", v),
     ["images", "trash", "tags", "metrics", "dedup"],
+  );
+}
+
+export function useEditAnalysis() {
+  return useInvalidating(
+    (v: { id: number; pipeline: string; text: string }) =>
+      api.put<Analysis[]>(`/api/images/${v.id}/analysis/${v.pipeline}`, { text: v.text }),
+    ["analysis"],
+  );
+}
+
+export function useDeleteAnalysis() {
+  return useInvalidating(
+    (v: { id: number; pipeline: string }) => api.del(`/api/images/${v.id}/analysis/${v.pipeline}`),
+    ["analysis", "tags"],
+  );
+}
+
+export function useAnalyzeImage() {
+  return useInvalidating(
+    (v: { id: number; pipelines: string[] }) =>
+      api.post<{ outcomes: AnalysisOutcome[] }>(`/api/images/${v.id}/analyze`, { pipelines: v.pipelines }),
+    ["analysis", "tags"],
   );
 }
 

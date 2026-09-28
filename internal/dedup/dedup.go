@@ -426,8 +426,8 @@ func Resolve(ctx context.Context, b *bag.Bag, res []Resolution) (int, error) {
 				}
 				n, _ := resu.RowsAffected()
 				trashed += int(n)
-				if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO image_tags(image_id, tag_id)
-					SELECT ?, tag_id FROM image_tags WHERE image_id = ?`, r.Keep, d); err != nil {
+				if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO image_tags(image_id, tag_id, source)
+					SELECT ?, tag_id, source FROM image_tags WHERE image_id = ?`, r.Keep, d); err != nil {
 					return err
 				}
 			}

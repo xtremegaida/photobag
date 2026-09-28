@@ -39,21 +39,24 @@ type Image struct {
 	ThumbW       int      `json:"thumbW"`
 	ThumbH       int      `json:"thumbH"`
 	Tags         []string `json:"tags"`
+	// Caption is the image's description (alt text), if analysed.
+	Caption string `json:"caption,omitempty"`
 }
 
 const imageCols = `i.id, i.uid, i.name, i.original_name, i.original_path, i.format, i.size,
 	i.width, i.height, COALESCE(i.taken_at, ''), COALESCE(i.taken_offset, ''), COALESCE(i.file_mtime, 0),
 	i.imported_at, COALESCE(i.deleted_at, 0), COALESCE(i.merged_into, 0), i.sha256,
-	COALESCE(th.width, 0), COALESCE(th.height, 0)`
+	COALESCE(th.width, 0), COALESCE(th.height, 0), COALESCE(ac.text, '')`
 
-const imageFrom = ` FROM images i LEFT JOIN thumbnails th ON th.blob_id = i.blob_id`
+const imageFrom = ` FROM images i LEFT JOIN thumbnails th ON th.blob_id = i.blob_id
+	LEFT JOIN analyses ac ON ac.image_id = i.id AND ac.pipeline = 'caption'`
 
 func scanImage(sc interface{ Scan(...any) error }) (Image, error) {
 	var im Image
 	var sha []byte
 	err := sc.Scan(&im.ID, &im.UID, &im.Name, &im.OriginalName, &im.OriginalPath, &im.Format, &im.Size,
 		&im.Width, &im.Height, &im.TakenAt, &im.TakenOffset, &im.FileMtime,
-		&im.ImportedAt, &im.DeletedAt, &im.MergedInto, &sha, &im.ThumbW, &im.ThumbH)
+		&im.ImportedAt, &im.DeletedAt, &im.MergedInto, &sha, &im.ThumbW, &im.ThumbH, &im.Caption)
 	im.SHA256 = hex.EncodeToString(sha)
 	im.Tags = []string{}
 	return im, err

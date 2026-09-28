@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -89,19 +90,20 @@ func TestRefusesNonSQLite(t *testing.T) {
 
 func TestMigrationTakesBackup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.photobag")
+	v1, _ := embeddedMigrations.ReadFile("migrations/001_init.sql")
+	migrationFS = fstest.MapFS{"migrations/001_init.sql": {Data: v1}}
+	t.Cleanup(func() { migrationFS = embeddedMigrations })
 	b, err := Open(path, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := b.W.Exec(`INSERT INTO tags(name, key, created_at) VALUES ('x', 'x', 0)`); err != nil {
+		t.Fatal(err)
+	}
 	b.Close()
 
-	v1, _ := embeddedMigrations.ReadFile("migrations/001_init.sql")
-	migrationFS = fstest.MapFS{
-		"migrations/001_init.sql":  {Data: v1},
-		"migrations/002_extra.sql": {Data: []byte("CREATE TABLE extra (id INTEGER PRIMARY KEY);")},
-	}
-	t.Cleanup(func() { migrationFS = embeddedMigrations })
-
+	// Upgrade a v1 bag with the real migrations.
+	migrationFS = embeddedMigrations
 	b, err = Open(path, Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -109,11 +111,19 @@ func TestMigrationTakesBackup(t *testing.T) {
 	defer b.Close()
 	var version int64
 	b.R.QueryRow("PRAGMA user_version").Scan(&version)
-	if version != 2 {
-		t.Fatalf("user_version = %d, want 2", version)
+	latest := LatestVersion()
+	if version != int64(latest) || latest < 2 {
+		t.Fatalf("user_version = %d, want %d", version, latest)
 	}
-	if _, err := os.Stat(path + ".pre-v2.bak"); err != nil {
+	if _, err := os.Stat(fmt.Sprintf("%s.pre-v%d.bak", path, latest)); err != nil {
 		t.Fatalf("expected pre-migration backup: %v", err)
+	}
+	var n int
+	if err := b.R.QueryRow("SELECT count(*) FROM tags JOIN analyses ON 0").Scan(&n); err != nil {
+		t.Fatalf("analyses table after migration: %v", err)
+	}
+	if err := b.R.QueryRow("SELECT count(source) FROM image_tags").Scan(&n); err != nil {
+		t.Fatalf("image_tags.source after migration: %v", err)
 	}
 }
 
@@ -156,5 +166,8 @@ func TestGlobAndLabels(t *testing.T) {
 	}
 	if ValidateLabel("   ") == nil {
 		t.Error("blank label should be invalid")
+	}
+	if !Contains("1girl, long_hair, SMILE", "Long Hair") || !Contains("Straße", "STRASSE") || Contains("cat", "dog") {
+		t.Error("Contains should fold case and treat _ as a space")
 	}
 }

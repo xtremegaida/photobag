@@ -131,7 +131,7 @@ const Thumb = memo(function Thumb({ id, index, size, selected, focused, fit, onO
       onClick={click}
       title={im ? `${im.name}${im.tags.length ? ` — ${im.tags.join(", ")}` : ""}` : undefined}
     >
-      <img src={thumbUrl(id)} loading="lazy" decoding="async" draggable={false} alt={im?.name ?? ""} />
+      <img src={thumbUrl(id)} loading="lazy" decoding="async" draggable={false} alt={im?.caption || im?.name || ""} />
       {onSelect && (
         <Checkbox
           className={classes.check}

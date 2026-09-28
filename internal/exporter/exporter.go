@@ -86,6 +86,12 @@ type ManifestEntry struct {
 	TakenOffset  string                 `json:"takenOffset,omitempty"`
 	Tags         []string               `json:"tags"`
 	Scores       map[string]ScoreDetail `json:"scores,omitempty"`
+	// Analysis results: the caption, the text found in the image ("" when
+	// there was none), Danbooru tags and the category ("Main / Sub").
+	Caption  string   `json:"caption,omitempty"`
+	OCR      *string  `json:"ocr,omitempty"`
+	Danbooru []string `json:"danbooru,omitempty"`
+	Category string   `json:"category,omitempty"`
 }
 
 // ScoreDetail is an exported per-metric score.
@@ -274,6 +280,23 @@ func manifestEntry(ctx context.Context, b *bag.Bag, rel string, im library.Image
 		e.Scores = map[string]ScoreDetail{}
 		for _, s := range scores {
 			e.Scores[s.MetricName] = ScoreDetail{Score: s.Score, Stderr: s.Stderr, Rank: s.Rank, Of: s.Of}
+		}
+	}
+	as, err := library.Analyses(ctx, b, im.ID)
+	if err != nil {
+		return e, err
+	}
+	for _, a := range as {
+		switch a.Pipeline {
+		case library.PipelineCaption:
+			e.Caption = a.Text
+		case library.PipelineOCR:
+			t := a.Text
+			e.OCR = &t
+		case library.PipelineDanbooru:
+			e.Danbooru = a.Tags
+		case library.PipelineCategory:
+			e.Category = a.Text
 		}
 	}
 	return e, nil

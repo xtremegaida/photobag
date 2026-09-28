@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"photobag/internal/analysis"
 	"photobag/internal/backup"
 	"photobag/internal/bag"
 	"photobag/internal/dedup"
@@ -37,7 +38,10 @@ type Config struct {
 	AllowRemote bool
 	// NoToken disables the per-launch access token.
 	NoToken bool
-	Logger  *slog.Logger
+	// KeyStore is the file holding model API keys (default: in the user's
+	// configuration directory).
+	KeyStore string
+	Logger   *slog.Logger
 }
 
 // DefaultAddr is where serve listens by default.
@@ -55,6 +59,7 @@ type Server struct {
 	scans   *dedup.Store
 	preview *previewCache
 	simSort *orderCache
+	keys    *analysis.KeyStore
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -79,6 +84,9 @@ func New(b *bag.Bag, cfg Config) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	if cfg.KeyStore == "" {
+		cfg.KeyStore = analysis.DefaultKeyStorePath()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	ev := events.New()
 	var tok [16]byte
@@ -92,6 +100,7 @@ func New(b *bag.Bag, cfg Config) *Server {
 		scans:   dedup.NewStore(),
 		preview: newPreviewCache(256 << 20),
 		simSort: newOrderCache(4),
+		keys:    &analysis.KeyStore{Path: cfg.KeyStore},
 		ctx:     ctx, cancel: cancel,
 		backups: map[string]*pendingBackup{},
 	}
@@ -200,7 +209,7 @@ func (s *Server) watchExternalChanges() {
 		if err := conn.QueryRowContext(s.ctx, "PRAGMA data_version").Scan(&v); err != nil {
 			continue
 		}
-		if last >= 0 && v != last && time.Since(s.b.LastLocalWrite()) > 3*time.Second && !s.jobs.Busy() {
+		if last >= 0 && v != last && time.Since(s.b.LastLocalWrite()) > 3*time.Second && !s.jobs.Busy(jobs.MainLane) {
 			s.events.Changed("all")
 		}
 		last = v
@@ -237,7 +246,7 @@ func (s *Server) idleCheckpoint() {
 		case <-t.C:
 		}
 		last := s.b.LastLocalWrite()
-		if last.After(done) && time.Since(last) > 5*time.Second && !s.jobs.Busy() {
+		if last.After(done) && time.Since(last) > 5*time.Second && !s.jobs.Busy(jobs.MainLane) {
 			s.b.CheckpointTruncate(s.ctx)
 			done = last
 		}

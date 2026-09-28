@@ -6,7 +6,9 @@ An organising, deduplicating bag for images. A whole photo library lives in
 - the original image bytes (bit-exact),
 - thumbnails and visual thumbprints,
 - tags,
-- comparison runs and scores.
+- comparison runs and scores,
+- captions, text found in images, Danbooru tags and categories from a vision
+  model.
 
 You can copy, back up or carry the library as a single file.
 
@@ -17,7 +19,8 @@ existing, and can:
 - **import** a folder (optionally recursive),
 - **export** to a folder,
 - **back up** the bag,
-- find **duplicates**, bit-identical or visually similar.
+- find **duplicates**, bit-identical or visually similar,
+- **analyse** images with a vision model behind any OpenAI-compatible API.
 
 ## Quick start
 
@@ -119,6 +122,46 @@ pages.
     pairs cancelled.
   - The gallery can sort by any metric.
 
+### Analysis (vision model)
+
+Point PhotoBag at an **OpenAI-compatible endpoint** whose model accepts images
+(llama.cpp server, LM Studio, Ollama, vLLM, OpenAI, OpenRouter…), choose a set
+of images (all, tags/name, or the selection), and run one or more pipelines:
+
+| Pipeline | Stored as |
+| --- | --- |
+| **Caption** | a one- or two-sentence description for people who cannot see the image; also the image's alt text in the UI |
+| **Text in image (OCR)** | the legible text, keeping line breaks; blank when there is none |
+| **Danbooru tags** | Danbooru-style tags (`1girl`, `outdoors`, `long_hair`…); optionally also added as PhotoBag tags, with a prefix and spaces for underscores |
+| **Category** | one category, or a main and a sub category, added as tags (`Nature`, `Nature / Skies`) |
+
+- **Categories** come from your list (`Main: Sub, Sub` per line). The answer
+  must match the list; a wrong answer gets one corrective follow-up. With no
+  list the model names categories itself and is shown the ones already in use,
+  so they stay consistent.
+- **Search:** the library's *Search descriptions & text* box finds images by
+  caption, text in the image, Danbooru tag or category (`"quoted phrases"`
+  work; `long hair` finds `long_hair`).
+- **Re-running:** a job sends only images without a result by default, or
+  also those made with another model or prompt, or all. A re-run replaces the
+  tags its pipeline added, never tags you added yourself. Corrections you make
+  to captions and OCR text are kept.
+- **Tuning:** every prompt can be replaced, and *Try on a random image* shows
+  the parsed result, the raw reply and any reasoning without storing anything.
+  *Check connection* asks the model to read a number from a test image.
+- **Server quirks:** extra request parameters (a JSON object) are added to
+  every request, e.g. `{"chat_template_kwargs": {"enable_thinking": false}}`
+  to switch off thinking for Qwen models on llama.cpp. Rate limits and server
+  errors are retried; `max_tokens`/`temperature` are adapted for models that
+  reject them; a job stops early if the key is wrong or every request fails.
+- **Privacy:** images (scaled to 1024 px by default) are sent to the endpoint,
+  so a local server keeps everything on the machine. The **API key is not
+  stored in the bag**: it lives in `%AppData%\PhotoBag\credentials.json`
+  (Windows) or `~/.config/PhotoBag/credentials.json` (Linux), or comes from
+  `PHOTOBAG_API_KEY`.
+- Analysis jobs run beside imports and exports, and results appear in the
+  lightbox as they are stored, where they can be corrected, re-run or removed.
+
 ### Export and backup
 
 - **Export:**
@@ -127,7 +170,8 @@ pages.
     characters, trailing dots).
   - Names that clash, even only by case, get ` (2)`.
   - Optional: keep the original folder structure, and write
-    `photobag-manifest.json` with each file's id, tags and scores.
+    `photobag-manifest.json` with each file's id, tags, scores and analysis
+    results.
 - **Backup:** `VACUUM INTO` writes a compacted, standalone copy.
   - In the UI you can download it or save it to a path on the machine.
   - It never overwrites an existing file, and checks free disk space first.
@@ -140,6 +184,8 @@ photobag import  <bag> <folder|file> [-r] [--tag T]... [--tag-folders] [--skip-i
 photobag export  <bag> <folder> [--tag T]... [--any-tag T]... [--not-tag T]... [--glob G] [--untagged]
                                 [--keep-structure] [--overwrite | --skip-existing] [--manifest]
 photobag dedup   <bag> [--mode similar|exact] [--neighbors 8] [--threshold 0.9] [--apply] [selection flags]
+photobag analyze <bag> -p caption,ocr,danbooru,category [--mode missing|changed|all] [--endpoint URL] [--model M]
+                       [--concurrency N] [--dry-run] [selection flags]
 photobag backup  <bag> <file-or-folder>
 photobag compact <bag>
 photobag info    <bag> [--json]
@@ -149,6 +195,9 @@ Global: --journal auto|wal|delete   --no-migration-backup   -v
 
 `dedup` is a dry run unless you pass `--apply`. With `--apply` it trashes the
 proposed duplicates, and they can still be restored.
+
+`analyze` uses the bag's analysis settings (set them in the UI); the flags
+override the endpoint, model and concurrency for one run.
 
 ## The bag file
 
@@ -175,7 +224,7 @@ SQLite driver is pure Go.
 ```bash
 node scripts/build.mjs                  # types + web UI + binaries for windows/amd64, linux/amd64, linux/arm64 → dist/
 node scripts/build.mjs --targets linux/amd64 --skip-web
-go test ./...                           # Go tests (imaging, bag, import/export, dedup, scoring, server)
+go test ./...                           # Go tests (imaging, bag, import/export, dedup, scoring, analysis, server)
 npm --prefix web run typecheck
 npm --prefix web run lint
 npm --prefix web test
@@ -206,6 +255,7 @@ WebP, TIFF, BMP and GIF files, and junk files.
 | `internal/importer`, `internal/exporter`, `internal/backup` | transfer |
 | `internal/similar`, `internal/dedup` | k-nearest-neighbour search, similarity ordering, duplicate clusters and resolution |
 | `internal/scoring` | runs, the Feistel pair scheduler and the Bradley–Terry fit |
+| `internal/llm`, `internal/analysis` | OpenAI-compatible client (retries, parameter fallbacks, fake server for tests); pipelines, prompts, reply parsing, analysis jobs |
 | `internal/jobs`, `internal/events`, `internal/server` | background jobs, SSE, HTTP API, security |
 | `internal/webui` | embedded build of `web/` |
 | `web/` | React + TypeScript + Mantine SPA; `src/api/gen` is generated by [tygo](https://github.com/gzuidhof/tygo) from the Go types |

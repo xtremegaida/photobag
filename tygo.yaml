@@ -30,6 +30,11 @@ packages:
     output_path: "web/src/api/gen/jobs.ts"
   - path: "photobag/internal/backup"
     output_path: "web/src/api/gen/backup.ts"
+  - path: "photobag/internal/analysis"
+    output_path: "web/src/api/gen/analysis.ts"
+    include_files: ["settings.go", "runner.go", "check.go"]
+    frontmatter: |
+      import type { ImageQuery } from "./query";
 type_mappings:
   time.Time: "string /* RFC3339 */"
   imaging.Format: "string"

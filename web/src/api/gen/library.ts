@@ -2,6 +2,104 @@
 import type { FileStats } from "./bag";
 
 //////////
+// source: analyses.go
+
+/**
+ * Analysis pipelines: what a vision-language model is asked about an image.
+ */
+export const PipelineOCR = "ocr"; // text found in the image
+/**
+ * Analysis pipelines: what a vision-language model is asked about an image.
+ */
+export const PipelineCaption = "caption"; // a short description for people who cannot see it
+/**
+ * Analysis pipelines: what a vision-language model is asked about an image.
+ */
+export const PipelineDanbooru = "danbooru"; // Danbooru-style tags
+/**
+ * Analysis pipelines: what a vision-language model is asked about an image.
+ */
+export const PipelineCategory = "category"; // one category, or a main and a sub category
+/**
+ * Analysis is the current result of one pipeline for one image.
+ */
+export interface Analysis {
+  pipeline: string;
+  /**
+   * Text is the result as plain text: the caption, the text found in the
+   * image, the Danbooru tags joined with ", ", or "Main / Sub". It is
+   * empty when the pipeline found nothing (e.g. no legible text).
+   */
+  text: string;
+  /**
+   * Tags are the Danbooru tags, in the model's order.
+   */
+  tags?: string[];
+  /**
+   * Main and Sub are the category (Sub only with two levels).
+   */
+  main?: string;
+  sub?: string;
+  /**
+   * Model that produced the result.
+   */
+  model: string;
+  /**
+   * Edited is set once a person corrected the result; analysis jobs
+   * never overwrite edited results.
+   */
+  edited: boolean;
+  updatedAt: number /* int64 */;
+}
+/**
+ * AnalysisData is the pipeline-specific part stored as JSON.
+ */
+export interface AnalysisData {
+  tags?: string[];
+  main?: string;
+  sub?: string;
+}
+/**
+ * AnalysisWrite stores one pipeline result.
+ */
+export interface AnalysisWrite {
+  ImageID: number /* int64 */;
+  Pipeline: string;
+  Text: string;
+  Data?: AnalysisData;
+  Model: string;
+  /**
+   * Config identifies the prompt and options that produced the result.
+   */
+  Config: string;
+  /**
+   * Tags, when non-nil, replaces the tags this pipeline has attached to
+   * the image (tags a person added are never removed).
+   */
+  Tags: string[];
+  /**
+   * Force replaces a result a person edited (for an explicit re-run).
+   */
+  Force: boolean;
+}
+/**
+ * PipelineStats counts results of one pipeline over active images.
+ */
+export interface PipelineStats {
+  pipeline: string;
+  /**
+   * Analysed images have a result; Empty ones found nothing (no text).
+   */
+  analysed: number /* int */;
+  empty: number /* int */;
+  edited: number /* int */;
+  /**
+   * TagLinks is how many tags this pipeline has attached to images.
+   */
+  tagLinks: number /* int */;
+}
+
+//////////
 // source: images.go
 /*
 Package library implements the core image and tag operations on a bag:
@@ -31,6 +129,10 @@ export interface Image {
   thumbW: number /* int */;
   thumbH: number /* int */;
   tags: string[];
+  /**
+   * Caption is the image's description (alt text), if analysed.
+   */
+  caption?: string;
 }
 /**
  * ImageScore is an image's standing on one metric.
@@ -68,6 +170,7 @@ export interface Stats {
   metrics: number /* int64 */;
   runs: number /* int64 */;
   comparisons: number /* int64 */;
+  analysed: number /* int64 */; // images with at least one analysis result
   blobs: number /* int64 */;
   originalBytes: number /* int64 */;
   file: FileStats;
@@ -83,6 +186,11 @@ export interface Tag {
   id: number /* int64 */;
   name: string;
   count: number /* int */;
+  /**
+   * Auto is how many of those images got the tag from an analysis
+   * pipeline rather than from a person.
+   */
+  auto: number /* int */;
 }
 
 //////////

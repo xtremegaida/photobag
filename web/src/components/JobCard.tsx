@@ -1,8 +1,9 @@
 import { Alert, Badge, Button, Card, Group, Progress, Stack, Table, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 import { api } from "../api/client";
-import type { ExportReport, ImportReport, Job } from "../api/types";
+import type { AnalysisProgress, AnalysisReport, ExportReport, ImportReport, Job } from "../api/types";
 import { formatBytes, formatDate } from "../lib/format";
+import { eta, formatDuration, pipelineInfo } from "../lib/pipelines";
 import { isActive } from "../stores/jobs";
 import { jobFraction } from "./JobIndicator";
 
@@ -27,8 +28,15 @@ function ProgressLine({ job }: { job: Job }) {
     detail = `${p.done}/${p.total} images · ${p.written} written · ${p.skipped} skipped · ${p.failed} failed`;
   } else if ((job.kind === "dedup-scan" || job.kind === "refresh") && p.total !== undefined) {
     detail = `Comparing thumbprints ${p.done}/${p.total}`;
+  } else if (job.kind === "retag" && p.total !== undefined) {
+    detail = `${p.done}/${p.total} images`;
+  } else if (job.kind === "analyze" && p.total !== undefined) {
+    const a = job.progress as AnalysisProgress;
+    const left = eta(job.startedAt, a.done, a.total);
+    detail = `${a.done}/${a.total} requests · ${a.stored} stored · ${a.failed} failed${left ? ` · about ${left} left` : ""}`;
   }
   if (!isActive(job) && job.kind !== "import" && job.kind !== "export") detail = null;
+  const lastError = job.kind === "analyze" && isActive(job) ? (job.progress as AnalysisProgress | undefined)?.lastError : undefined;
   return (
     <Stack gap={4}>
       {isActive(job) && (
@@ -43,6 +51,47 @@ function ProgressLine({ job }: { job: Job }) {
         <Text size="xs" c="dimmed" truncate>
           {String(p.current)}
         </Text>
+      )}
+      {lastError && (
+        <Text size="xs" c="red" lineClamp={2}>
+          Last error: {lastError}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function AnalyzeResult({ r }: { r: AnalysisReport }) {
+  const by = Object.entries(r.byPipeline ?? {}).filter(([, n]) => n > 0);
+  return (
+    <Stack gap="xs">
+      <Text size="sm">
+        <b>{r.stored}</b> of {r.requests} result(s) stored for {r.images} image(s)
+        {r.failed ? (
+          <>
+            , <b>{r.failed}</b> failed
+          </>
+        ) : null}
+        {r.skipped ? `, ${r.skipped} skipped` : ""} in {formatDuration(r.millis)}
+        {r.cancelled ? " (cancelled)" : ""}.
+      </Text>
+      {by.length > 0 && (
+        <Text size="xs" c="dimmed">
+          {by.map(([p, n]) => `${pipelineInfo(p).heading}: ${n}`).join(" · ")} · {r.model || "default model"} ·{" "}
+          {(r.promptTokens + r.completionTokens).toLocaleString()} tokens
+        </Text>
+      )}
+      {r.failures?.length > 0 && (
+        <Alert color="red" variant="light" title={`${r.failed} request(s) failed`}>
+          <Stack gap={2} mah={200} style={{ overflow: "auto" }}>
+            {r.failures.map((f, i) => (
+              <Text key={i} size="xs" style={{ wordBreak: "break-word" }}>
+                <b>{f.name || `#${f.imageId}`}</b>{" "}
+                ({pipelineInfo(f.pipeline).heading}): {f.error}
+              </Text>
+            ))}
+          </Stack>
+        </Alert>
       )}
     </Stack>
   );
@@ -156,6 +205,13 @@ function GenericResult({ job }: { job: Job }) {
       </Text>
     );
   }
+  if (job.kind === "retag") {
+    return (
+      <Text size="sm">
+        {r.removed ? "Removed the Danbooru tags added by analysis." : `Updated the tags of ${String(r.updated)} analysed image(s).`}
+      </Text>
+    );
+  }
   if (job.kind === "dedup-scan") {
     return (
       <Text size="sm">
@@ -194,6 +250,7 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
         )}
         {!isActive(job) && job.kind === "import" && job.result != null && <ImportResult r={job.result as ImportReport} />}
         {!isActive(job) && job.kind === "export" && job.result != null && <ExportResult r={job.result as ExportReport} />}
+        {!isActive(job) && job.kind === "analyze" && job.result != null && <AnalyzeResult r={job.result as AnalysisReport} />}
         {!isActive(job) && <GenericResult job={job} />}
         {!compact && (
           <Text size="xs" c="dimmed">

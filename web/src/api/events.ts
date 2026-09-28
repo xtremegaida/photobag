@@ -11,6 +11,8 @@ const finishedTopics: Record<string, string[]> = {
   compact: ["images"],
   backup: ["images"],
   "dedup-scan": ["dedup"],
+  analyze: ["analysis", "tags", "images"],
+  retag: ["analysis", "tags", "images"],
 };
 
 /** Backup jobs started by this tab: download the file when they finish. */

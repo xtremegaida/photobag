@@ -30,6 +30,8 @@ export function parseGallery(sp: URLSearchParams, trash = false): GalleryState {
   if (sp.get("untagged") === "1") query.untagged = true;
   const q = sp.get("q");
   if (q) query.nameGlob = q;
+  const text = sp.get("text");
+  if (text) query.text = text;
   if (trash) query.scope = "trash";
 
   const field = sp.get("sort") ?? DEFAULT_SORT.field;
@@ -52,6 +54,7 @@ export function galleryParams({ query, sort }: GalleryState): URLSearchParams {
   for (const t of query.tagsNone ?? []) sp.append("not", t);
   if (query.untagged) sp.set("untagged", "1");
   if (query.nameGlob) sp.set("q", query.nameGlob);
+  if (query.text) sp.set("text", query.text);
   const field = sort.field || "imported";
   if (field !== DEFAULT_SORT.field) sp.set("sort", field);
   const defaultDesc = field === "imported";
@@ -64,5 +67,13 @@ export function galleryParams({ query, sort }: GalleryState): URLSearchParams {
 
 /** Whether the query filters anything (beyond scope). */
 export function hasFilters(q: ImageQuery): boolean {
-  return !!(q.tagsAll?.length || q.tagsAny?.length || q.tagsNone?.length || q.untagged || q.nameGlob || q.ids?.length);
+  return !!(
+    q.tagsAll?.length ||
+    q.tagsAny?.length ||
+    q.tagsNone?.length ||
+    q.untagged ||
+    q.nameGlob ||
+    q.text?.trim() ||
+    q.ids?.length
+  );
 }

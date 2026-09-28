@@ -70,6 +70,20 @@ func (s *Server) routes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/runs/{id}/answer", s.answer)
 	s.handle(mux, "POST /api/runs/{id}/undo", s.undo)
 	s.handle(mux, "POST /api/runs/{id}/status", s.runStatus)
+
+	s.handle(mux, "GET /api/analysis/settings", s.getAnalysisSettings)
+	s.handle(mux, "PUT /api/analysis/settings", s.putAnalysisSettings)
+	s.handle(mux, "POST /api/analysis/models", s.analysisModels)
+	s.handle(mux, "POST /api/analysis/check", s.checkAnalysis)
+	s.handle(mux, "GET /api/analysis/stats", s.analysisStats)
+	s.handle(mux, "POST /api/analysis/plan", s.analysisPlan)
+	s.handle(mux, "POST /api/analysis/try", s.tryAnalysis)
+	s.handle(mux, "POST /api/analysis/remove-tags", s.removeAnalysisTags)
+	s.handle(mux, "POST /api/analysis/retag", s.retagAnalyses)
+	s.handle(mux, "POST /api/jobs/analyze", s.startAnalysis)
+	s.handle(mux, "POST /api/images/{id}/analyze", s.analyzeImage)
+	s.handle(mux, "PUT /api/images/{id}/analysis/{pipeline}", s.editAnalysis)
+	s.handle(mux, "DELETE /api/images/{id}/analysis/{pipeline}", s.deleteAnalysis)
 }
 
 func (s *Server) getStats(w http.ResponseWriter, r *http.Request) error {
@@ -175,7 +189,11 @@ func (s *Server) getImage(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return ok(w, map[string]any{"image": im, "scores": scores})
+	as, err := library.Analyses(r.Context(), s.b, id)
+	if err != nil {
+		return err
+	}
+	return ok(w, map[string]any{"image": im, "scores": scores, "analyses": as})
 }
 
 func (s *Server) patchImage(w http.ResponseWriter, r *http.Request) error {

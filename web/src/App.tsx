@@ -20,6 +20,7 @@ import {
   IconListCheck,
   IconMoon,
   IconPhoto,
+  IconSparkles,
   IconSun,
   IconTags,
   IconTrash,
@@ -30,6 +31,7 @@ import { useServerEvents } from "./api/events";
 import { useStats } from "./api/hooks";
 import { JobIndicator } from "./components/JobIndicator";
 import { formatBytes, plural } from "./lib/format";
+import { AnalysisPage } from "./pages/Analysis";
 import { BackupPage } from "./pages/Backup";
 import { ComparePage } from "./pages/Compare";
 import { DedupPage } from "./pages/Dedup";
@@ -47,6 +49,7 @@ const nav = [
   { to: "/tags", label: "Tags", icon: IconTags },
   { to: "/duplicates", label: "Duplicates", icon: IconCopy },
   { to: "/scoring", label: "Scoring", icon: IconChartBar },
+  { to: "/analysis", label: "Analysis", icon: IconSparkles },
   { divider: "Transfer" },
   { to: "/import", label: "Import", icon: IconFolderUp },
   { to: "/export", label: "Export", icon: IconUpload },
@@ -139,6 +142,7 @@ export function App() {
             <Route path="/scoring" element={<ScoringPage />} />
             <Route path="/scoring/runs/:id" element={<ComparePage />} />
             <Route path="/scoring/metrics/:id" element={<RankingsPage />} />
+            <Route path="/analysis" element={<AnalysisPage />} />
             <Route path="/import" element={<ImportPage />} />
             <Route path="/export" element={<ExportPage />} />
             <Route path="/backup" element={<BackupPage />} />

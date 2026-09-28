@@ -1,6 +1,6 @@
 import { ActionIcon, Anchor, Button, Group, Modal, ScrollArea, Stack, Table, Text, TextInput, Title, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconPencil, IconPlus, IconSparkles, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -129,7 +129,14 @@ export function TagsPage() {
                       {t.name}
                     </Anchor>
                   </Table.Td>
-                  <Table.Td ta="right">{t.count.toLocaleString()}</Table.Td>
+                  <Table.Td ta="right">
+                    {t.auto > 0 && (
+                      <Tooltip label={`${t.auto.toLocaleString()} of these added by analysis`}>
+                        <IconSparkles size={14} style={{ verticalAlign: "-2px", marginRight: 6, opacity: 0.6 }} aria-label="added by analysis" />
+                      </Tooltip>
+                    )}
+                    {t.count.toLocaleString()}
+                  </Table.Td>
                   <Table.Td>
                     <Group gap={4} justify="flex-end">
                       <Tooltip label="Rename or merge">
