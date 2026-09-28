@@ -1,0 +1,16 @@
+# build output
+/dist/
+/web/node_modules/
+/web/dist/
+/internal/webui/dist/*
+!/internal/webui/dist/.keep
+
+# local bags & scratch
+*.photobag
+*.photobag-wal
+*.photobag-shm
+*.db
+*.db-wal
+*.db-shm
+/tmp/
+/.scratch/

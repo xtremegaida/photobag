@@ -1,0 +1,37 @@
+# Generates web/src/api/gen/*.ts from the Go API types.
+# Run from the repo root: go run github.com/gzuidhof/tygo@v0.2.21 generate
+# (scripts/build.mjs does this).
+packages:
+  - path: "photobag/internal/library"
+    output_path: "web/src/api/gen/library.ts"
+    frontmatter: |
+      import type { FileStats } from "./bag";
+  - path: "photobag/internal/bag"
+    output_path: "web/src/api/gen/bag.ts"
+    include_files: ["bag.go"]
+  - path: "photobag/internal/query"
+    output_path: "web/src/api/gen/query.ts"
+  - path: "photobag/internal/scoring"
+    output_path: "web/src/api/gen/scoring.ts"
+    include_files: ["service.go"]
+    frontmatter: |
+      import type { ImageQuery } from "./query";
+  - path: "photobag/internal/dedup"
+    output_path: "web/src/api/gen/dedup.ts"
+    frontmatter: |
+      import type { ImageQuery } from "./query";
+  - path: "photobag/internal/importer"
+    output_path: "web/src/api/gen/importer.ts"
+  - path: "photobag/internal/exporter"
+    output_path: "web/src/api/gen/exporter.ts"
+    frontmatter: |
+      import type { ImageQuery } from "./query";
+  - path: "photobag/internal/jobs"
+    output_path: "web/src/api/gen/jobs.ts"
+  - path: "photobag/internal/backup"
+    output_path: "web/src/api/gen/backup.ts"
+type_mappings:
+  time.Time: "string /* RFC3339 */"
+  imaging.Format: "string"
+  query.ImageQuery: "ImageQuery"
+  bag.FileStats: "FileStats"

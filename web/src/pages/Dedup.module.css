@@ -1,0 +1,51 @@
+.members {
+  display: flex;
+  gap: var(--mantine-spacing-sm);
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.member {
+  flex: none;
+  width: 210px;
+  border-radius: var(--mantine-radius-md);
+  border: 2px solid transparent;
+  padding: 6px;
+  background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+}
+
+.member[data-delete] {
+  border-color: var(--mantine-color-red-7);
+}
+
+.member[data-delete] img {
+  opacity: 0.55;
+}
+
+.member[data-keeper] {
+  border-color: var(--mantine-color-teal-6);
+}
+
+.thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-8));
+  border-radius: var(--mantine-radius-sm);
+  cursor: zoom-in;
+  display: block;
+}
+
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  height: calc(100dvh - 120px);
+}
+
+.compare img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--mantine-color-dark-8);
+}

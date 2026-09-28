@@ -1,0 +1,207 @@
+import { Alert, Badge, Button, Card, Group, Progress, Stack, Table, Text } from "@mantine/core";
+import type { ReactNode } from "react";
+import { api } from "../api/client";
+import type { ExportReport, ImportReport, Job } from "../api/types";
+import { formatBytes, formatDate } from "../lib/format";
+import { isActive } from "../stores/jobs";
+import { jobFraction } from "./JobIndicator";
+
+const statusColor: Record<string, string> = {
+  queued: "gray",
+  running: "blue",
+  done: "teal",
+  failed: "red",
+  cancelled: "orange",
+};
+
+function ProgressLine({ job }: { job: Job }) {
+  const p = (job.progress ?? {}) as Record<string, number | string>;
+  const frac = jobFraction(job);
+  let detail: ReactNode = job.message;
+  if (job.kind === "import" && p.phase) {
+    detail =
+      p.phase === "scanning"
+        ? `Scanning… ${p.found} files found`
+        : `${p.done}/${p.found} files · ${p.added} added · ${p.skipped} skipped · ${p.failed} failed`;
+  } else if (job.kind === "export" && p.total !== undefined) {
+    detail = `${p.done}/${p.total} images · ${p.written} written · ${p.skipped} skipped · ${p.failed} failed`;
+  } else if ((job.kind === "dedup-scan" || job.kind === "refresh") && p.total !== undefined) {
+    detail = `Comparing thumbprints ${p.done}/${p.total}`;
+  }
+  if (!isActive(job) && job.kind !== "import" && job.kind !== "export") detail = null;
+  return (
+    <Stack gap={4}>
+      {isActive(job) && (
+        <Progress value={frac !== undefined ? frac * 100 : 100} animated={frac === undefined} striped={frac === undefined} />
+      )}
+      {detail && (
+        <Text size="sm" c="dimmed" truncate>
+          {detail}
+        </Text>
+      )}
+      {isActive(job) && p.current && (
+        <Text size="xs" c="dimmed" truncate>
+          {String(p.current)}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function ImportResult({ r }: { r: ImportReport }) {
+  const reasons = new Map<string, number>();
+  const failures = r.files.filter((f) => f.status === "failed");
+  for (const f of r.files) if (f.status === "skipped") reasons.set(f.reason, (reasons.get(f.reason) ?? 0) + 1);
+  return (
+    <Stack gap="xs">
+      <Text size="sm">
+        <b>{r.added}</b> added, <b>{r.skipped}</b> skipped, <b>{r.failed}</b> failed of {r.found} files in{" "}
+        {(r.millis / 1000).toFixed(1)}s{r.cancelled ? " (cancelled)" : ""}.
+      </Text>
+      {reasons.size > 0 && (
+        <Table withRowBorders={false} verticalSpacing={2} fz="sm">
+          <Table.Tbody>
+            {[...reasons].map(([reason, n]) => (
+              <Table.Tr key={reason}>
+                <Table.Td w={60} ta="right">
+                  {n}
+                </Table.Td>
+                <Table.Td c="dimmed">skipped: {reason}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
+      {failures.length > 0 && (
+        <Alert color="red" variant="light" title={`${failures.length} file(s) failed`}>
+          <Stack gap={2} mah={200} style={{ overflow: "auto" }}>
+            {failures.slice(0, 200).map((f) => (
+              <Text key={f.path} size="xs" style={{ wordBreak: "break-all" }}>
+                {f.path}: {f.reason}
+              </Text>
+            ))}
+          </Stack>
+        </Alert>
+      )}
+    </Stack>
+  );
+}
+
+function ExportResult({ r }: { r: ExportReport }) {
+  return (
+    <Stack gap="xs">
+      <Text size="sm">
+        <b>{r.written}</b> of {r.total} images written ({formatBytes(r.bytes)}) to <code>{r.dir}</code>
+        {r.skipped ? `, ${r.skipped} skipped` : ""}
+        {r.failed ? `, ${r.failed} failed` : ""}.
+      </Text>
+      {r.manifest && (
+        <Text size="xs" c="dimmed">
+          Manifest: {r.manifest}
+        </Text>
+      )}
+      {r.files.length > 0 && (
+        <Stack gap={2} mah={160} style={{ overflow: "auto" }}>
+          {r.files.map((f) => (
+            <Text key={f.imageId} size="xs" c={f.status === "failed" ? "red" : "dimmed"}>
+              {f.status}: {f.name}: {f.reason}
+            </Text>
+          ))}
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
+function GenericResult({ job }: { job: Job }) {
+  const r = job.result as Record<string, unknown> | undefined;
+  if (!r) return null;
+  if (job.kind === "backup" && typeof r.path === "string") {
+    return (
+      <Text size="sm">
+        Backup written to <code>{r.path}</code> ({formatBytes(Number(r.bytes))}).
+      </Text>
+    );
+  }
+  if (job.kind === "backup" && typeof r.filename === "string") {
+    return (
+      <Text size="sm">
+        Backup ready ({formatBytes(Number(r.bytes))}).{" "}
+        <a href={String(r.url)} download={String(r.filename)}>
+          Download {String(r.filename)}
+        </a>{" "}
+        (available once, for an hour)
+      </Text>
+    );
+  }
+  if (job.kind === "compact") {
+    return (
+      <Text size="sm">
+        Bag compacted: {formatBytes(Number(r.before))} → {formatBytes(Number(r.after))}.
+      </Text>
+    );
+  }
+  if (job.kind === "empty-trash") {
+    return (
+      <Text size="sm">
+        Purged {String(r.purged)} image(s), freeing {formatBytes(Number(r.bytesFreed))} of originals. Run Compact
+        (Backup page) to shrink the file.
+      </Text>
+    );
+  }
+  if (job.kind === "refresh") {
+    return (
+      <Text size="sm">
+        Updated {String(r.updated)} of {String(r.checked)} image file(s){Number(r.failed) ? `, ${String(r.failed)} failed` : ""}.
+      </Text>
+    );
+  }
+  if (job.kind === "dedup-scan") {
+    return (
+      <Text size="sm">
+        Scanned {String(r.scanned)} images, found {String(r.clusters)} duplicate group(s).
+      </Text>
+    );
+  }
+  return null;
+}
+
+/** Status, live progress and result of a background job. */
+export function JobCard({ job, compact = false }: { job: Job; compact?: boolean }) {
+  return (
+    <Card withBorder padding={compact ? "sm" : "md"}>
+      <Stack gap="xs">
+        <Group justify="space-between" wrap="nowrap">
+          <Text fw={600} truncate>
+            {job.title}
+          </Text>
+          <Group gap="xs" wrap="nowrap">
+            <Badge color={statusColor[job.status] ?? "gray"} variant="light">
+              {job.status}
+            </Badge>
+            {isActive(job) && (
+              <Button size="compact-xs" variant="subtle" color="red" onClick={() => api.post(`/api/jobs/${job.id}/cancel`)}>
+                Cancel
+              </Button>
+            )}
+          </Group>
+        </Group>
+        <ProgressLine job={job} />
+        {job.error && (
+          <Alert color="red" variant="light">
+            {job.error}
+          </Alert>
+        )}
+        {!isActive(job) && job.kind === "import" && job.result != null && <ImportResult r={job.result as ImportReport} />}
+        {!isActive(job) && job.kind === "export" && job.result != null && <ExportResult r={job.result as ExportReport} />}
+        {!isActive(job) && <GenericResult job={job} />}
+        {!compact && (
+          <Text size="xs" c="dimmed">
+            Started {formatDate(job.startedAt || job.createdAt)}
+            {job.finishedAt ? ` · finished ${formatDate(job.finishedAt)}` : ""}
+          </Text>
+        )}
+      </Stack>
+    </Card>
+  );
+}
