@@ -1,6 +1,0 @@
-onnxruntime-gpu>=1.17
-fastapi
-uvicorn[standard]
-python-multipart
-pillow
-numpy
