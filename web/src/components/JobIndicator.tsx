@@ -8,7 +8,7 @@ export function jobFraction(job: Job): number | undefined {
   const p = job.progress as Record<string, unknown> | undefined;
   if (!p) return undefined;
   const done = Number(p.done);
-  const total = Number(p.found ?? p.total);
+  const total = Number(p.found ?? p.total ?? p.prompts);
   if (Number.isFinite(done) && Number.isFinite(total) && total > 0) return Math.min(1, done / total);
   return undefined;
 }

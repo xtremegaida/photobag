@@ -18,7 +18,7 @@ export const SORT_FIELDS = [
 
 const DEFAULT_SORT: Sort = { field: "imported", desc: true };
 
-/** Reads gallery filters and sort from the URL (tag=…&any=…&not=…&q=…). */
+/** Reads gallery filters and sort from the URL (tag=…&any=…&not=…&q=…&id=…). */
 export function parseGallery(sp: URLSearchParams, trash = false): GalleryState {
   const query: ImageQuery = {};
   const all = sp.getAll("tag");
@@ -32,6 +32,8 @@ export function parseGallery(sp: URLSearchParams, trash = false): GalleryState {
   if (q) query.nameGlob = q;
   const text = sp.get("text");
   if (text) query.text = text;
+  const ids = sp.getAll("id").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length) query.ids = ids;
   if (trash) query.scope = "trash";
 
   const field = sp.get("sort") ?? DEFAULT_SORT.field;
@@ -55,6 +57,7 @@ export function galleryParams({ query, sort }: GalleryState): URLSearchParams {
   if (query.untagged) sp.set("untagged", "1");
   if (query.nameGlob) sp.set("q", query.nameGlob);
   if (query.text) sp.set("text", query.text);
+  for (const id of query.ids ?? []) sp.append("id", String(id));
   const field = sort.field || "imported";
   if (field !== DEFAULT_SORT.field) sp.set("sort", field);
   const defaultDesc = field === "imported";

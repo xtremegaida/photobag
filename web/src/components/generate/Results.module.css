@@ -1,0 +1,94 @@
+.tile {
+  position: relative;
+  flex: none;
+  border-radius: var(--mantine-radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  background: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-6));
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  user-select: none;
+}
+
+.tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.tile:hover {
+  outline-color: light-dark(var(--mantine-color-gray-5), var(--mantine-color-dark-2));
+}
+
+.tile[data-selected] {
+  outline: 3px solid var(--mantine-color-teal-5);
+  outline-offset: -3px;
+}
+
+.tile[data-moved] img {
+  opacity: 0.55;
+}
+
+.check {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  opacity: 0;
+}
+
+.tile:hover .check,
+.tile[data-selected] .check,
+.selecting .check {
+  opacity: 1;
+}
+
+.badge {
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
+  pointer-events: none;
+}
+
+.empty {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--mantine-radius-sm);
+  border: 1px dashed light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4));
+  color: var(--mantine-color-dimmed);
+  font-size: 11px;
+  text-align: center;
+  padding: 4px;
+}
+
+.empty[data-failed] {
+  border-color: var(--mantine-color-red-5);
+  color: var(--mantine-color-red-6);
+}
+
+.grid {
+  border-collapse: separate;
+  border-spacing: 4px;
+}
+
+.grid th {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mantine-color-dimmed);
+  text-align: center;
+  padding: 0 2px;
+  max-width: 220px;
+  word-break: break-word;
+}
+
+.grid th[data-row] {
+  text-align: right;
+  max-width: 180px;
+}
+
+.grid td {
+  vertical-align: top;
+  padding: 0;
+}

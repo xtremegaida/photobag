@@ -1,7 +1,8 @@
 import { Alert, Badge, Button, Card, Group, Progress, Stack, Table, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 import { api } from "../api/client";
-import type { AnalysisProgress, AnalysisReport, ExportReport, ImportReport, Job } from "../api/types";
+import { Link } from "react-router";
+import type { AnalysisProgress, AnalysisReport, ExportReport, GenerateProgress, GenerateResult, ImportReport, Job } from "../api/types";
 import { formatBytes, formatDate } from "../lib/format";
 import { eta, formatDuration, pipelineInfo } from "../lib/pipelines";
 import { isActive } from "../stores/jobs";
@@ -30,13 +31,20 @@ function ProgressLine({ job }: { job: Job }) {
     detail = `Comparing thumbprints ${p.done}/${p.total}`;
   } else if (job.kind === "retag" && p.total !== undefined) {
     detail = `${p.done}/${p.total} images`;
+  } else if (job.kind === "generate" && p.prompts !== undefined) {
+    const g = job.progress as GenerateProgress;
+    const left = eta(job.startedAt, g.done, g.prompts);
+    detail = `${g.done}/${g.prompts} prompts · ${g.images} image${g.images === 1 ? "" : "s"}${g.failed ? ` · ${g.failed} failed` : ""}${left ? ` · about ${left} left` : ""}`;
   } else if (job.kind === "analyze" && p.total !== undefined) {
     const a = job.progress as AnalysisProgress;
     const left = eta(job.startedAt, a.done, a.total);
     detail = `${a.done}/${a.total} requests · ${a.stored} stored · ${a.failed} failed${left ? ` · about ${left} left` : ""}`;
   }
   if (!isActive(job) && job.kind !== "import" && job.kind !== "export") detail = null;
-  const lastError = job.kind === "analyze" && isActive(job) ? (job.progress as AnalysisProgress | undefined)?.lastError : undefined;
+  const lastError =
+    (job.kind === "analyze" || job.kind === "generate") && isActive(job)
+      ? (job.progress as AnalysisProgress | GenerateProgress | undefined)?.lastError
+      : undefined;
   return (
     <Stack gap={4}>
       {isActive(job) && (
@@ -209,6 +217,15 @@ function GenericResult({ job }: { job: Job }) {
     return (
       <Text size="sm">
         {r.removed ? "Removed the Danbooru tags added by analysis." : `Updated the tags of ${String(r.updated)} analysed image(s).`}
+      </Text>
+    );
+  }
+  if (job.kind === "generate") {
+    const g = r as unknown as GenerateResult;
+    return (
+      <Text size="sm">
+        Made {g.images} image{g.images === 1 ? "" : "s"} from {g.prompts} prompt{g.prompts === 1 ? "" : "s"}
+        {g.failed ? `, ${g.failed} failed` : ""}. <Link to={`/generate/${g.experimentId}`}>Open the experiment</Link>
       </Text>
     );
   }

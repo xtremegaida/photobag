@@ -25,6 +25,7 @@ import {
   IconTags,
   IconTrash,
   IconUpload,
+  IconWand,
 } from "@tabler/icons-react";
 import { Navigate, NavLink as RouterNavLink, Route, Routes, useLocation } from "react-router";
 import { useServerEvents } from "./api/events";
@@ -35,8 +36,10 @@ import { AnalysisPage } from "./pages/Analysis";
 import { BackupPage } from "./pages/Backup";
 import { ComparePage } from "./pages/Compare";
 import { DedupPage } from "./pages/Dedup";
+import { ExperimentPage } from "./pages/Experiment";
 import { ExportPage } from "./pages/Export";
 import { GalleryPage } from "./pages/Gallery";
+import { GeneratePage } from "./pages/Generate";
 import { ImportPage } from "./pages/Import";
 import { JobsPage } from "./pages/Jobs";
 import { RankingsPage } from "./pages/Rankings";
@@ -50,6 +53,7 @@ const nav = [
   { to: "/duplicates", label: "Duplicates", icon: IconCopy },
   { to: "/scoring", label: "Scoring", icon: IconChartBar },
   { to: "/analysis", label: "Analysis", icon: IconSparkles },
+  { to: "/generate", label: "Generate", icon: IconWand },
   { divider: "Transfer" },
   { to: "/import", label: "Import", icon: IconFolderUp },
   { to: "/export", label: "Export", icon: IconUpload },
@@ -123,6 +127,12 @@ export function App() {
                     <Badge size="xs" variant="light" color="gray">
                       {stats.trashed}
                     </Badge>
+                  ) : item.to === "/generate" && stats?.generated ? (
+                    <Tooltip label="Generated images not yet moved to the library">
+                      <Badge size="xs" variant="light" color="grape">
+                        {stats.generated}
+                      </Badge>
+                    </Tooltip>
                   ) : undefined
                 }
                 style={{ borderRadius: "var(--mantine-radius-md)" }}
@@ -143,6 +153,8 @@ export function App() {
             <Route path="/scoring/runs/:id" element={<ComparePage />} />
             <Route path="/scoring/metrics/:id" element={<RankingsPage />} />
             <Route path="/analysis" element={<AnalysisPage />} />
+            <Route path="/generate" element={<GeneratePage />} />
+            <Route path="/generate/:id" element={<ExperimentPage />} />
             <Route path="/import" element={<ImportPage />} />
             <Route path="/export" element={<ExportPage />} />
             <Route path="/backup" element={<BackupPage />} />

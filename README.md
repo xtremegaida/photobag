@@ -8,7 +8,9 @@ An organising, deduplicating bag for images. A whole photo library lives in
 - tags,
 - comparison runs and scores,
 - captions, text found in images, Danbooru tags and categories from a vision
-  model.
+  model,
+- ComfyUI workflows, generation experiments and how each generated image was
+  made.
 
 You can copy, back up or carry the library as a single file.
 
@@ -20,7 +22,9 @@ existing, and can:
 - **export** to a folder,
 - **back up** the bag,
 - find **duplicates**, bit-identical or visually similar,
-- **analyse** images with a vision model behind any OpenAI-compatible API.
+- **analyse** images with a vision model behind any OpenAI-compatible API,
+- **generate** images with ComfyUI: run workflows with overrides, sweep
+  settings to compare them, and keep the images that work.
 
 ## Quick start
 
@@ -210,6 +214,56 @@ The server is `internal/tagger/python/tagger_server.py` (FastAPI, `/health`,
 `TAGS_PATH`, `MODEL_NAME`, `DEVICE` (`cuda`, `cpu` or `auto`), `GPU_DEVICE`,
 `MAX_CONCURRENCY`, `ORT_PRELOAD_DLLS`.
 
+### Generating images with ComfyUI
+
+Under **Generate**, PhotoBag runs [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+workflows on a ComfyUI server (set its address under Generate → ComfyUI) and
+receives the images over ComfyUI's websocket.
+
+- **Workflows:** templates are workflows exported from ComfyUI in the API
+  format (Workflow → Export (API)). Paste one or load the file. PhotoBag
+  lists the nodes and the literal inputs that can be overridden, and warns
+  about duplicate node titles or a missing image output.
+  - A "Send Image (WebSocket)" node (from
+    [comfyui-tooling-nodes](https://github.com/Acly/comfyui-tooling-nodes))
+    hands images straight over. Workflows ending in "Save Image" work too:
+    PhotoBag then downloads what ComfyUI saved.
+  - Every edit is kept as a version. Images made with an older version still
+    point at it.
+- **Experiments** hold generated images apart from the library. They don't
+  appear in the library, duplicates, scoring, exports or statistics until
+  moved.
+  - **Overrides** name a node by its title (or `#id` when titles repeat) and
+    change one of its inputs: `Width › value = 2048`,
+    `Checkpoint › ckpt_name`, the sampler, the prompt, anything literal.
+    ComfyUI's node definitions supply the choices (installed models,
+    samplers) and ranges.
+  - **N images:** each gets its own seed. The seed policy can be random,
+    counting up from the workflow's seed, or kept as it is.
+  - **Sweeps:** an override takes several values, as a list (model names,
+    prompts) or a range (steps 25 to 30). Every combination is made, and the
+    n-th image of each combination shares a seed, so only the swept values
+    differ. Model sweeps run model by model, to load each model once.
+  - **Results:** sweeps show as tables, with the swept values across and
+    down. Failed prompts (say, a model ComfyUI doesn't have) show ComfyUI's
+    error in their cell.
+- **Keeping images:** select images and **move them to the library**,
+  optionally tagging them. They are named after the experiment. Or
+  **delete** them for good.
+- **Metadata:** each image keeps its workflow version and the exact values
+  applied. From an image, in the experiment or in the library, you can:
+  - load its settings back into the form, with or without its seed, to make
+    variations or to see what one change does to that very image;
+  - save its effective workflow as a new template;
+  - download it in the API format.
+
+  PNGs also carry the prompt the way ComfyUI's Save Image writes it, so a
+  file dropped on ComfyUI opens the workflow.
+- **Running:** generation runs as a background job. Two prompts are kept
+  queued, so ComfyUI never waits. You see live progress, and sampler
+  previews when ComfyUI sends them. Stopping it removes PhotoBag's waiting
+  prompts from ComfyUI's queue and interrupts the running one.
+
 ### Export and backup
 
 - **Export:**
@@ -305,6 +359,8 @@ WebP, TIFF, BMP and GIF files, and junk files.
 | `internal/similar`, `internal/dedup` | k-nearest-neighbour search, similarity ordering, duplicate clusters and resolution |
 | `internal/scoring` | runs, the Feistel pair scheduler and the Bradley–Terry fit |
 | `internal/llm`, `internal/analysis` | OpenAI-compatible client (retries, parameter fallbacks, fake server for tests); pipelines, prompts, reply parsing, analysis jobs |
+| `internal/comfy` | ComfyUI API-format workflows (titles, overrides, canonical JSON), sweep and seed expansion, HTTP and websocket client, prompt runner, PNG prompt chunks, fake server for tests |
+| `internal/experiments` | workflow templates and versions, experiments, generation jobs, moving images to the library |
 | `internal/tagger` | WD tagger client, the embedded Python server, its installer (Python discovery, venv, pip, Hugging Face downloads) and the on-demand local process |
 | `internal/jobs`, `internal/events`, `internal/server` | background jobs, SSE, HTTP API, security |
 | `internal/webui` | embedded build of `web/` |

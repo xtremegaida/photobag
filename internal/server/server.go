@@ -21,6 +21,7 @@ import (
 	"photobag/internal/bag"
 	"photobag/internal/dedup"
 	"photobag/internal/events"
+	"photobag/internal/experiments"
 	"photobag/internal/importer"
 	"photobag/internal/jobs"
 	"photobag/internal/scoring"
@@ -65,6 +66,13 @@ type Server struct {
 	simSort *orderCache
 	keys    *analysis.KeyStore
 	tagger  *tagger.Local
+
+	// Image generation: node definitions from ComfyUI, the running job of
+	// each experiment, and the latest sampler previews.
+	nodeInfo nodeInfoCache
+	genMu    sync.Mutex
+	genJobs  map[int64]string
+	previews samplerPreviews
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -113,6 +121,7 @@ func New(b *bag.Bag, cfg Config) *Server {
 			OnChange: func() { ev.Changed("tagger") }},
 		ctx: ctx, cancel: cancel,
 		backups: map[string]*pendingBackup{},
+		genJobs: map[int64]string{},
 	}
 }
 
@@ -166,6 +175,9 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 	}
 	backup.CleanStale(s.b.Path)
+	if err := experiments.RecoverRuns(ctx, s.b); err != nil {
+		s.log.Warn("could not tidy up interrupted generations", "err", err)
+	}
 	srv := &http.Server{
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,

@@ -48,6 +48,11 @@ func Restore(ctx context.Context, b *bag.Bag, ids []int64) (int, error) {
 	return int(n), err
 }
 
+// UnusedBlob is a condition on blobs: neither an image nor a generated
+// image held in an experiment uses it.
+const UnusedBlob = `NOT EXISTS (SELECT 1 FROM images WHERE images.blob_id = blobs.id)
+	AND NOT EXISTS (SELECT 1 FROM generations WHERE generations.blob_id = blobs.id)`
+
 // PurgeResult summarises an empty-trash operation.
 type PurgeResult struct {
 	Purged     int   `json:"purged"`
@@ -92,11 +97,10 @@ func EmptyTrash(ctx context.Context, b *bag.Bag, ids []int64) (PurgeResult, erro
 			return err
 		}
 		if err := tx.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(size), 0) FROM blobs
-			WHERE NOT EXISTS (SELECT 1 FROM images WHERE images.blob_id = blobs.id)`).Scan(&r.BlobsFreed, &r.BytesFreed); err != nil {
+			WHERE `+UnusedBlob).Scan(&r.BlobsFreed, &r.BytesFreed); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM blobs
-			WHERE NOT EXISTS (SELECT 1 FROM images WHERE images.blob_id = blobs.id)`); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM blobs WHERE `+UnusedBlob); err != nil {
 			return err
 		}
 		return MarkAllMetricsDirty(ctx, tx)

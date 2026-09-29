@@ -13,6 +13,7 @@ const finishedTopics: Record<string, string[]> = {
   "dedup-scan": ["dedup"],
   analyze: ["analysis", "tags", "images"],
   retag: ["analysis", "tags", "images"],
+  generate: ["generations", "experiments"],
 };
 
 /** Backup jobs started by this tab: download the file when they finish. */

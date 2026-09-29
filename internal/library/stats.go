@@ -8,16 +8,19 @@ import (
 
 // Stats summarises a bag.
 type Stats struct {
-	Name          string        `json:"name"`
-	Path          string        `json:"path"`
-	Images        int64         `json:"images"`
-	Trashed       int64         `json:"trashed"`
-	Purged        int64         `json:"purged"`
-	Tags          int64         `json:"tags"`
-	Metrics       int64         `json:"metrics"`
-	Runs          int64         `json:"runs"`
-	Comparisons   int64         `json:"comparisons"`
-	Analysed      int64         `json:"analysed"` // images with at least one analysis result
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Images      int64  `json:"images"`
+	Trashed     int64  `json:"trashed"`
+	Purged      int64  `json:"purged"`
+	Tags        int64  `json:"tags"`
+	Metrics     int64  `json:"metrics"`
+	Runs        int64  `json:"runs"`
+	Comparisons int64  `json:"comparisons"`
+	Analysed    int64  `json:"analysed"` // images with at least one analysis result
+	// Generated counts generated images held in experiments (not in the
+	// library yet).
+	Generated     int64         `json:"generated"`
 	Blobs         int64         `json:"blobs"`
 	OriginalBytes int64         `json:"originalBytes"`
 	File          bag.FileStats `json:"file"`
@@ -39,9 +42,10 @@ func GetStats(ctx context.Context, b *bag.Bag) (Stats, error) {
 		(SELECT count(*) FROM score_runs),
 		(SELECT count(*) FROM comparisons WHERE winner IS NOT NULL),
 		(SELECT count(DISTINCT image_id) FROM analyses),
+		(SELECT count(*) FROM generations WHERE image_id IS NULL),
 		(SELECT count(*) FROM blobs),
 		(SELECT COALESCE(sum(size), 0) FROM blobs)`).Scan(
-		&s.Images, &s.Trashed, &s.Purged, &s.Tags, &s.Metrics, &s.Runs, &s.Comparisons, &s.Analysed, &s.Blobs, &s.OriginalBytes)
+		&s.Images, &s.Trashed, &s.Purged, &s.Tags, &s.Metrics, &s.Runs, &s.Comparisons, &s.Analysed, &s.Generated, &s.Blobs, &s.OriginalBytes)
 	if err != nil {
 		return s, err
 	}

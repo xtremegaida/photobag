@@ -187,6 +187,11 @@ export interface Stats {
   runs: number /* int64 */;
   comparisons: number /* int64 */;
   analysed: number /* int64 */; // images with at least one analysis result
+  /**
+   * Generated counts generated images held in experiments (not in the
+   * library yet).
+   */
+  generated: number /* int64 */;
   blobs: number /* int64 */;
   originalBytes: number /* int64 */;
   file: FileStats;
@@ -212,6 +217,12 @@ export interface Tag {
 //////////
 // source: trash.go
 
+/**
+ * UnusedBlob is a condition on blobs: neither an image nor a generated
+ * image held in an experiment uses it.
+ */
+export const UnusedBlob = `NOT EXISTS (SELECT 1 FROM images WHERE images.blob_id = blobs.id)
+	AND NOT EXISTS (SELECT 1 FROM generations WHERE generations.blob_id = blobs.id)`;
 /**
  * PurgeResult summarises an empty-trash operation.
  */

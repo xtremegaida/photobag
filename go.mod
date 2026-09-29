@@ -3,6 +3,7 @@ module photobag
 go 1.26.0
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/image v0.46.0

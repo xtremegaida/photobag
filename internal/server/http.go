@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"photobag/internal/experiments"
 	"photobag/internal/library"
 	"photobag/internal/scoring"
 	"photobag/internal/webui"
@@ -186,8 +187,10 @@ func writeError(w http.ResponseWriter, err error) {
 		status = ae.status
 	case errors.Is(err, library.ErrNotFound), errors.Is(err, scoring.ErrNotFound):
 		status = http.StatusNotFound
-	case errors.Is(err, scoring.ErrConflict):
+	case errors.Is(err, scoring.ErrConflict), errors.Is(err, experiments.ErrConflict):
 		status = http.StatusConflict
+	case errors.Is(err, experiments.ErrInvalid):
+		status = http.StatusBadRequest
 	}
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }

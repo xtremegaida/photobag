@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createBatcher } from "../api/batcher";
 import { formatBytes, formatTaken, percent } from "./format";
 import type { AnalysisSettings, TaggerStatus } from "../api/types";
+import { defaultSweep, gridLayout, isSeedName, rangeValues, requestFrom, valueCount, valueKind } from "./generate";
 import { eta, formatDuration, formatMillis, notReady, usesTagger } from "./pipelines";
 import { galleryParams, hasFilters, parseGallery } from "./query-url";
 import { rangeBetween, toggled } from "./selection";
@@ -124,5 +125,106 @@ describe("pipeline readiness", () => {
   it("formats short durations in milliseconds", () => {
     expect(formatMillis(230)).toBe("230 ms");
     expect(formatMillis(12_400)).toBe("12s");
+  });
+});
+
+describe("generation helpers", () => {
+  it("expands ranges like the server", () => {
+    expect(rangeValues({ from: 25, to: 30, step: 1 })).toEqual([25, 26, 27, 28, 29, 30]);
+    expect(rangeValues({ from: 0.1, to: 0.5, step: 0.1 })).toEqual([0.1, 0.2, 0.3, 0.4, 0.5]);
+    expect(rangeValues({ from: 30, to: 20, step: 5 })).toEqual([30, 25, 20]);
+    expect(rangeValues({ from: 1, to: 2, step: 0 })).toEqual([]);
+    expect(valueCount({ node: "KSampler", input: "steps", sweep: { range: { from: 1, to: 4, step: 1 } } })).toBe(4);
+    expect(valueCount({ node: "KSampler", input: "steps", value: 3 })).toBe(1);
+  });
+
+  it("lays sweeps out as tables", () => {
+    expect(gridLayout([], 2)).toBeNull();
+    const one = gridLayout([{ node: "KSampler", input: "steps", values: [10, 20, 30] }], 2)!;
+    expect(one.columns).toEqual(["10", "20", "30"]);
+    expect(one.rows.map((r) => r.label)).toEqual(["#1", "#2"]);
+    expect(one.rows[1].cells[2]).toEqual({ combo: 2, repeat: 1 });
+    // Two dimensions: the first down the side, the last across; combos
+    // run with the first dimension slowest.
+    const two = gridLayout(
+      [
+        { node: "Checkpoint", input: "ckpt_name", values: ["a", "b"] },
+        { node: "KSampler", input: "cfg", values: [3, 5, 7] },
+      ],
+      4,
+    )!;
+    expect(two.rowTitle).toBe("Checkpoint › ckpt_name");
+    expect(two.rows.map((r) => r.label)).toEqual(["a", "b"]);
+    expect(two.rows[1].cells.map((c) => c.combo)).toEqual([3, 4, 5]);
+    const three = gridLayout(
+      [
+        { node: "A", input: "x", values: [1, 2] },
+        { node: "B", input: "y", values: ["p", "q"] },
+        { node: "C", input: "z", values: [true, false] },
+      ],
+      1,
+    )!;
+    expect(three.rows.map((r) => r.label)).toEqual(["1 · p", "1 · q", "2 · p", "2 · q"]);
+    expect(three.rows[2].cells.map((c) => c.combo)).toEqual([4, 5]);
+  });
+
+  it("picks up from a generated image", () => {
+    const g = {
+      id: 7,
+      versionId: 3,
+      workflowId: 2,
+      workflowName: "T2I",
+      applied: [
+        { node: "Positive", input: "text", value: "a cat" },
+        { node: "KSampler", input: "steps", value: 24, kind: "sweep" },
+        { node: "KSampler", input: "seed", value: 99, kind: "seed" },
+        { node: "Refiner", input: "noise_seed", value: 5 },
+      ],
+      combo: 0,
+      repeat: 0,
+      batchIndex: 0,
+      sha256: "",
+      format: "png",
+      size: 1,
+      width: 1,
+      height: 1,
+      thumbW: 1,
+      thumbH: 1,
+      millis: 0,
+      createdAt: 0,
+      current: true,
+      templateExists: true,
+    };
+    const fresh = requestFrom(g, false, 4);
+    expect(fresh.overrides.map((o) => o.input)).toEqual(["text", "steps"]);
+    expect(fresh.overrides[1]).toEqual({ node: "KSampler", input: "steps", value: 24 });
+    expect(fresh).toMatchObject({ workflowId: 2, versionId: undefined, count: 4, seed: "random" });
+    const seeded = requestFrom({ ...g, current: false }, true, 4);
+    expect(seeded.overrides.map((o) => o.input)).toEqual(["text", "steps", "seed", "noise_seed"]);
+    expect(seeded).toMatchObject({ versionId: 3, count: 1 });
+    expect(requestFrom({ ...g, templateExists: false }, false, 1).workflowId).toBe(0);
+  });
+
+  it("chooses editors and default sweeps", () => {
+    expect(valueKind({ name: "sampler_name", type: "COMBO", options: ["a"] }, "a")).toBe("combo");
+    expect(valueKind(undefined, 5)).toBe("int");
+    expect(valueKind(undefined, 5.5)).toBe("float");
+    expect(valueKind(undefined, "a\nb")).toBe("multiline");
+    expect(defaultSweep("float", 5, { name: "cfg", type: "FLOAT", step: 0.1, max: 100 })).toEqual({ range: { from: 5, to: 7, step: 1 } });
+    // Near the maximum it sweeps down.
+    expect(defaultSweep("float", 1, { name: "denoise", type: "FLOAT", step: 0.01, min: 0, max: 1 })).toEqual({
+      range: { from: 0.8, to: 1, step: 0.1 },
+    });
+    expect(defaultSweep("combo", "euler")).toEqual({ values: ["euler"] });
+    expect(isSeedName("noise_seed") && isSeedName("SEED") && !isSeedName("seeds")).toBe(true);
+  });
+});
+
+describe("gallery URL ids", () => {
+  it("round-trips chosen images", () => {
+    const st = parseGallery(new URLSearchParams("id=173&id=174&id=x&tag=a"));
+    expect(st.query.ids).toEqual([173, 174]);
+    expect(hasFilters(st.query)).toBe(true);
+    expect(galleryParams(st).getAll("id")).toEqual(["173", "174"]);
   });
 });

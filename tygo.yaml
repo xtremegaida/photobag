@@ -35,6 +35,14 @@ packages:
     include_files: ["settings.go", "runner.go", "check.go", "tagger.go"]
     frontmatter: |
       import type { ImageQuery } from "./query";
+  - path: "photobag/internal/comfy"
+    output_path: "web/src/api/gen/comfy.ts"
+    include_files: ["workflow.go", "sweep.go", "info.go"]
+  - path: "photobag/internal/experiments"
+    output_path: "web/src/api/gen/experiments.ts"
+    include_files: ["types.go"]
+    frontmatter: |
+      import type { Node, Override, Applied, Dim } from "./comfy";
   - path: "photobag/internal/tagger"
     output_path: "web/src/api/gen/tagger.ts"
     include_files: ["status.go"]
@@ -43,3 +51,7 @@ type_mappings:
   imaging.Format: "string"
   query.ImageQuery: "ImageQuery"
   bag.FileStats: "FileStats"
+  comfy.Node: "Node"
+  comfy.Override: "Override"
+  comfy.Applied: "Applied"
+  comfy.Dim: "Dim"

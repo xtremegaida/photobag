@@ -59,6 +59,10 @@ const topicKeys: Record<string, string[]> = {
   analysis: ["detail", "image", "ids", "count", "stats", "analysis-stats", "analysis-plan"],
   "analysis-settings": ["analysis-settings", "analysis-plan"],
   tagger: ["tagger-status"],
+  generations: ["generations", "generation", "gen-runs", "experiments", "experiment", "stats", "detail"],
+  experiments: ["experiments", "experiment"],
+  workflows: ["workflows", "workflow", "workflow-version", "generation"],
+  "comfy-settings": ["comfy-settings", "comfy-nodes"],
 };
 
 export function invalidateTopics(qc: QueryClient, topics: string[]) {

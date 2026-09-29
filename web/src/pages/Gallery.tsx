@@ -29,6 +29,20 @@ function SimilarChip({ id, onClear }: { id: number; onClear: () => void }) {
   );
 }
 
+function ChosenChip({ ids, onClear }: { ids: number[]; onClear: () => void }) {
+  const { data } = useImage(ids.length === 1 ? ids[0] : undefined);
+  return (
+    <Badge
+      variant="light"
+      size="lg"
+      rightSection={<CloseButton size="xs" onClick={onClear} aria-label="Show all images" />}
+      style={{ textTransform: "none" }}
+    >
+      {ids.length === 1 ? `Only ${data?.name ?? `#${ids[0]}`}` : `Only ${ids.length} chosen images`}
+    </Badge>
+  );
+}
+
 function EmptyTrashButton({ count }: { count: number }) {
   const [open, setOpen] = useState(false);
   const submit = useSubmitJob();
@@ -121,6 +135,9 @@ export function GalleryPage({ trash = false }: { trash?: boolean }) {
           {isFetching && !isLoading && <Loader size="xs" />}
           {state.sort.field === "similar" && state.sort.similarTo ? (
             <SimilarChip id={state.sort.similarTo} onClear={() => onChange(state.query, { field: "imported", desc: true })} />
+          ) : null}
+          {state.query.ids?.length ? (
+            <ChosenChip ids={state.query.ids} onClear={() => onChange({ ...state.query, ids: undefined }, state.sort)} />
           ) : null}
         </Group>
         {trash && <EmptyTrashButton count={stats?.trashed ?? 0} />}

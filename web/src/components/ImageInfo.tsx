@@ -8,6 +8,7 @@ import { useImageDetail, useRename, useRestore, useTrash } from "../api/hooks";
 import type { Image } from "../api/types";
 import { formatBytes, formatDate, formatScore, formatTaken } from "../lib/format";
 import { AnalysisResults } from "./AnalysisResults";
+import { GenerationInfo } from "./generate/GenerationInfo";
 import { TagEditor } from "./TagEditor";
 
 function NameEditor({ image }: { image: Image }) {
@@ -77,6 +78,7 @@ export function ImageInfo({ id, onTrashed }: { id: number; onTrashed?: () => voi
         <TagEditor imageIds={[im.id]} value={im.tags} />
       </div>
       <AnalysisResults id={im.id} analyses={data.analyses ?? []} />
+      {data.generation && <GenerationInfo g={data.generation} />}
       {im.deletedAt ? (
         <Badge color="orange" variant="light">
           In trash{im.mergedInto ? ` · duplicate of #${im.mergedInto}` : ""}

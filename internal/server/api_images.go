@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"photobag/internal/experiments"
 	"photobag/internal/exporter"
 	"photobag/internal/imaging"
 	"photobag/internal/library"
@@ -17,6 +18,7 @@ import (
 )
 
 func (s *Server) routes(mux *http.ServeMux) {
+	s.generateRoutes(mux)
 	s.handle(mux, "GET /api/events", s.sse)
 	s.handle(mux, "GET /api/stats", s.getStats)
 
@@ -196,7 +198,13 @@ func (s *Server) getImage(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return ok(w, map[string]any{"image": im, "scores": scores, "analyses": as})
+	out := map[string]any{"image": im, "scores": scores, "analyses": as}
+	if g, err := experiments.ForImage(r.Context(), s.b, id); err != nil {
+		return err
+	} else if g != nil {
+		out["generation"] = s.generationDetail(r.Context(), g)
+	}
+	return ok(w, out)
 }
 
 func (s *Server) patchImage(w http.ResponseWriter, r *http.Request) error {
@@ -266,6 +274,16 @@ func (s *Server) imagePreview(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	blobID, format, err := library.BlobInfo(r.Context(), s.b, id)
+	if err != nil {
+		return err
+	}
+	return s.sendPreview(w, r, blobID, format)
+}
+
+// sendPreview renders (or serves from the cache) a blob's preview at the
+// display size nearest ?size=.
+func (s *Server) sendPreview(w http.ResponseWriter, r *http.Request, blobID int64, format string) error {
 	want, _ := strconv.Atoi(r.URL.Query().Get("size"))
 	size := previewSizes[len(previewSizes)-1]
 	for _, ps := range previewSizes {
@@ -275,10 +293,6 @@ func (s *Server) imagePreview(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	ctx := r.Context()
-	blobID, format, err := library.BlobInfo(ctx, s.b, id)
-	if err != nil {
-		return err
-	}
 	etag := fmt.Sprintf(`"%d-%d"`, blobID, size)
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "private, max-age=86400")
