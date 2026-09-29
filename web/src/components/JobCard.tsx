@@ -77,8 +77,8 @@ function AnalyzeResult({ r }: { r: AnalysisReport }) {
       </Text>
       {by.length > 0 && (
         <Text size="xs" c="dimmed">
-          {by.map(([p, n]) => `${pipelineInfo(p).heading}: ${n}`).join(" · ")} · {r.model || "default model"} ·{" "}
-          {(r.promptTokens + r.completionTokens).toLocaleString()} tokens
+          {by.map(([p, n]) => `${pipelineInfo(p).heading}: ${n}`).join(" · ")} · {r.model || "default model"}
+          {r.promptTokens + r.completionTokens > 0 && ` · ${(r.promptTokens + r.completionTokens).toLocaleString()} tokens`}
         </Text>
       )}
       {r.failures?.length > 0 && (

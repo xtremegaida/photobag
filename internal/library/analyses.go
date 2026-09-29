@@ -39,12 +39,8 @@ type Analysis struct {
 	// Text is the result as plain text: the caption, the text found in the
 	// image, the Danbooru tags joined with ", ", or "Main / Sub". It is
 	// empty when the pipeline found nothing (e.g. no legible text).
-	Text string `json:"text"`
-	// Tags are the Danbooru tags, in the model's order.
-	Tags []string `json:"tags,omitempty"`
-	// Main and Sub are the category (Sub only with two levels).
-	Main string `json:"main,omitempty"`
-	Sub  string `json:"sub,omitempty"`
+	Text         string `json:"text"`
+	AnalysisData `tstype:",extends"`
 	// Model that produced the result.
 	Model string `json:"model"`
 	// Edited is set once a person corrected the result; analysis jobs
@@ -53,11 +49,24 @@ type Analysis struct {
 	UpdatedAt int64 `json:"updatedAt"`
 }
 
-// AnalysisData is the pipeline-specific part stored as JSON.
+// AnalysisData is the pipeline-specific part of a result, stored as JSON.
 type AnalysisData struct {
+	// Tags are the Danbooru tags in the model's order (from a tagger:
+	// character tags, then general tags, most confident first).
 	Tags []string `json:"tags,omitempty"`
-	Main string   `json:"main,omitempty"`
-	Sub  string   `json:"sub,omitempty"`
+	// Main and Sub are the category (Sub only with two levels).
+	Main string `json:"main,omitempty"`
+	Sub  string `json:"sub,omitempty"`
+	// Source is "tagger" for Danbooru tags from a WD tagger, which also
+	// fills in the fields below.
+	Source string `json:"source,omitempty"`
+	// Characters lists which of Tags are character tags.
+	Characters []string `json:"characters,omitempty"`
+	// Rating is general, sensitive, questionable or explicit.
+	Rating      string  `json:"rating,omitempty"`
+	RatingScore float64 `json:"ratingScore,omitempty"`
+	// Scores are the tagger's confidence in each tag, 0–1.
+	Scores map[string]float64 `json:"scores,omitempty"`
 }
 
 // Analyses returns an image's analysis results in pipeline order.
@@ -95,7 +104,7 @@ func AnalysesFor(ctx context.Context, b *bag.Bag, ids []int64) (map[int64][]Anal
 		if data != "" {
 			var d AnalysisData
 			if json.Unmarshal([]byte(data), &d) == nil {
-				a.Tags, a.Main, a.Sub = d.Tags, d.Main, d.Sub
+				a.AnalysisData = d
 			}
 		}
 		out[id] = append(out[id], a)

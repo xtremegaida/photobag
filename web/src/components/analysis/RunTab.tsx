@@ -6,10 +6,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { api, errorMessage } from "../../api/client";
-import { invalidateTopics, useAnalysisPlan, useAnalysisStats, useStats, useSubmitJob } from "../../api/hooks";
-import type { AnalysisOptions, ImageQuery, PipelineStats } from "../../api/types";
+import { invalidateTopics, useAnalysisPlan, useAnalysisStats, useStats, useSubmitJob, useTaggerStatus } from "../../api/hooks";
+import type { AnalysisOptions, AnalysisSettings, ImageQuery, PipelineStats } from "../../api/types";
 import { plural } from "../../lib/format";
-import { PIPELINES, pipelineInfo } from "../../lib/pipelines";
+import { notReady, PIPELINES, pipelineInfo, usesTagger } from "../../lib/pipelines";
 import { isActive, useJobStore } from "../../stores/jobs";
 import { QueryBuilder, type Source } from "../QueryBuilder";
 import { RecentJobs } from "../RecentJobs";
@@ -106,7 +106,7 @@ function StatsCard() {
 }
 
 /** Chooses images and pipelines and starts an analysis job. */
-export function RunTab({ configured, onSetup }: { configured: boolean; onSetup: () => void }) {
+export function RunTab({ settings, onSetup }: { settings: AnalysisSettings; onSetup: (tab: string) => void }) {
   const [sp] = useSearchParams();
   const [query, setQuery] = useState<ImageQuery>({});
   const [pipelines, setPipelines] = useLocalStorage<string[]>({ key: "pb-analysis-pipelines", defaultValue: ["caption"] });
@@ -115,6 +115,9 @@ export function RunTab({ configured, onSetup }: { configured: boolean; onSetup: 
   const { data: plan, error } = useAnalysisPlan(opts);
   const submit = useSubmitJob();
   const running = useJobStore((s) => Object.values(s.jobs).some((j) => j.kind === "analyze" && isActive(j)));
+  const { data: tagger } = useTaggerStatus();
+  const blocked = pipelines.map((p) => notReady(settings, p, tagger)).find(Boolean);
+  const needsModel = pipelines.some((p) => !usesTagger(settings, p));
   const toggle = (id: string, on: boolean) =>
     setPipelines((ps) => (on ? PIPELINES.map((p) => p.id).filter((p) => p === id || ps.includes(p)) : ps.filter((p) => p !== id)));
   const start = () =>
@@ -125,12 +128,17 @@ export function RunTab({ configured, onSetup }: { configured: boolean; onSetup: 
   return (
     <Group align="flex-start" gap="xl" wrap="wrap">
       <Stack gap="md" style={{ flex: "1 1 480px", maxWidth: 680 }}>
-        {!configured && (
-          <Alert color="orange" variant="light" icon={<IconAlertTriangle size={18} />} title="No model connected">
+        {blocked && (
+          <Alert
+            color="orange"
+            variant="light"
+            icon={<IconAlertTriangle size={18} />}
+            title={needsModel && !settings.endpoint ? "No model connected" : "The tagger is not ready"}
+          >
             <Text size="sm">
-              Set up an OpenAI-compatible endpoint with a vision model first.{" "}
-              <Anchor component="button" type="button" size="sm" onClick={onSetup}>
-                Open Connection
+              {needsModel && !settings.endpoint ? "Set up an OpenAI-compatible endpoint with a vision model first, or choose only pipelines that do not need one." : blocked}{" "}
+              <Anchor component="button" type="button" size="sm" onClick={() => onSetup(needsModel && !settings.endpoint ? "connection" : "pipelines")}>
+                {needsModel && !settings.endpoint ? "Open Connection" : "Open Pipelines & prompts"}
               </Anchor>
             </Text>
           </Alert>
@@ -149,6 +157,11 @@ export function RunTab({ configured, onSetup }: { configured: boolean; onSetup: 
                     <Group gap={6} wrap="nowrap">
                       <p.icon size={16} />
                       <span>{p.label}</span>
+                      {usesTagger(settings, p.id) && (
+                        <Text span size="xs" c="dimmed">
+                          (WD tagger)
+                        </Text>
+                      )}
                       {plan && pipelines.includes(p.id) && (
                         <Text span size="xs" c="dimmed">
                           {plural(plan.byPipeline[p.id] ?? 0, "image")} to do
@@ -186,7 +199,7 @@ export function RunTab({ configured, onSetup }: { configured: boolean; onSetup: 
               leftSection={<IconPlayerPlay size={18} />}
               onClick={start}
               loading={submit.isPending}
-              disabled={!configured || !plan?.requests}
+              disabled={!!blocked || !plan?.requests}
             >
               {running ? "Queue after the running analysis" : "Start analysis"}
             </Button>

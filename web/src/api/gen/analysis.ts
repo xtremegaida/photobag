@@ -128,6 +128,14 @@ export interface Outcome {
   main?: string;
   sub?: string;
   /**
+   * From a tagger: which Tags are character tags, the rating, and each
+   * tag's confidence.
+   */
+  characters?: string[];
+  rating?: string;
+  ratingScore?: number /* float64 */;
+  scores?: { [key: string]: number /* float64 */};
+  /**
    * TagNames are the PhotoBag tags attached for this result.
    */
   tagNames?: string[];
@@ -146,6 +154,7 @@ export interface Outcome {
 /*
 Package analysis runs images through a vision-language model behind an
 OpenAI-compatible API: OCR, captions, Danbooru tags and categories.
+Danbooru tags can come from a WD tagger instead.
 */
 
 /**
@@ -198,23 +207,75 @@ export interface TextOptions {
   prompt: string;
 }
 /**
+ * Where Danbooru tags come from.
+ */
+export const DanbooruFromModel = "model"; // the vision model
+/**
+ * Where Danbooru tags come from.
+ */
+export const DanbooruFromTagger = "tagger"; // a WD tagger server
+/**
  * DanbooruOptions configure the Danbooru tag pipeline.
  */
 export interface DanbooruOptions {
+  /**
+   * Source is DanbooruFromModel or DanbooruFromTagger.
+   */
+  source: string;
   prompt: string;
+  /**
+   * MaxTags limits the (general) tags per image.
+   */
   maxTags: number /* int */;
   /**
    * AddTags also attaches the tags to the image as PhotoBag tags.
    */
   addTags: boolean;
   /**
-   * Prefix is prepended to PhotoBag tag names, e.g. "db:".
+   * Prefix is prepended to PhotoBag tag names, e.g. "db:" (for a tagger,
+   * to general tags; see TaggerOptions for the others).
    */
   prefix: string;
   /**
    * Spaces writes PhotoBag tag names with spaces instead of underscores.
    */
   spaces: boolean;
+  tagger: TaggerOptions;
+}
+/**
+ * TaggerOptions configure Danbooru tags from a WD tagger.
+ */
+export interface TaggerOptions {
+  /**
+   * Local uses the tagger installed with "photobag tagger install";
+   * otherwise the server at Endpoint (http://host:port).
+   */
+  local: boolean;
+  endpoint: string;
+  /**
+   * General, character and rating tags: whether to keep them, and the
+   * confidence they need.
+   */
+  general: TagFilter;
+  character: TagFilter;
+  rating: TagFilter;
+  /**
+   * CharacterPrefix and RatingPrefix are prepended to the PhotoBag tag
+   * names of character and rating tags (general tags use
+   * DanbooruOptions.Prefix).
+   */
+  characterPrefix: string;
+  ratingPrefix: string;
+}
+/**
+ * TagFilter chooses the tags of one tagger category.
+ */
+export interface TagFilter {
+  include: boolean;
+  /**
+   * Threshold is the minimum confidence, 0–1.
+   */
+  threshold: number /* float64 */;
 }
 /**
  * CategoryOptions configure the category pipeline.
@@ -234,4 +295,31 @@ export interface CategoryOptions {
    * Prefix is prepended to the category tags.
    */
   prefix: string;
+}
+
+//////////
+// source: tagger.go
+
+/**
+ * TaggerCheck reports a tagger check.
+ */
+export interface TaggerCheck {
+  /**
+   * OK means the tagger answered and tagged a test image.
+   */
+  ok: boolean;
+  message: string;
+  name?: string;
+  onGpu: boolean;
+  providers: string[];
+  tagCount: number /* int */;
+  /**
+   * Tags found in the test image.
+   */
+  tags: string[];
+  millis: number /* int64 */;
+  /**
+   * StartMillis is how long starting the local tagger took, if it did.
+   */
+  startMillis?: number /* int64 */;
 }

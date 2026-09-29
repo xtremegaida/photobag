@@ -53,7 +53,7 @@ func TestAnalysisAPI(t *testing.T) {
 	defer fake.Close()
 
 	keyFile := filepath.Join(dir, "config", "credentials.json")
-	srv := New(b, Config{Addr: "127.0.0.1:0", NoToken: true, KeyStore: keyFile})
+	srv := New(b, Config{Addr: "127.0.0.1:0", NoToken: true, KeyStore: keyFile, TaggerDir: filepath.Join(dir, "tagger")})
 	if err := srv.Listen(); err != nil {
 		t.Fatal(err)
 	}

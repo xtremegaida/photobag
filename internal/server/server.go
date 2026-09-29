@@ -24,6 +24,7 @@ import (
 	"photobag/internal/importer"
 	"photobag/internal/jobs"
 	"photobag/internal/scoring"
+	"photobag/internal/tagger"
 )
 
 // Config configures the server.
@@ -41,7 +42,10 @@ type Config struct {
 	// KeyStore is the file holding model API keys (default: in the user's
 	// configuration directory).
 	KeyStore string
-	Logger   *slog.Logger
+	// TaggerDir is the local tagger installation (default
+	// tagger.DefaultDir()).
+	TaggerDir string
+	Logger    *slog.Logger
 }
 
 // DefaultAddr is where serve listens by default.
@@ -60,6 +64,7 @@ type Server struct {
 	preview *previewCache
 	simSort *orderCache
 	keys    *analysis.KeyStore
+	tagger  *tagger.Local
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -87,6 +92,9 @@ func New(b *bag.Bag, cfg Config) *Server {
 	if cfg.KeyStore == "" {
 		cfg.KeyStore = analysis.DefaultKeyStorePath()
 	}
+	if cfg.TaggerDir == "" {
+		cfg.TaggerDir = tagger.DefaultDir()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	ev := events.New()
 	var tok [16]byte
@@ -101,7 +109,9 @@ func New(b *bag.Bag, cfg Config) *Server {
 		preview: newPreviewCache(256 << 20),
 		simSort: newOrderCache(4),
 		keys:    &analysis.KeyStore{Path: cfg.KeyStore},
-		ctx:     ctx, cancel: cancel,
+		tagger: &tagger.Local{Dir: cfg.TaggerDir, IdleTimeout: 10 * time.Minute, Log: cfg.Logger,
+			OnChange: func() { ev.Changed("tagger") }},
+		ctx: ctx, cancel: cancel,
 		backups: map[string]*pendingBackup{},
 	}
 }
@@ -178,6 +188,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	defer done()
 	_ = srv.Shutdown(shutCtx)
 	s.jobs.Wait()
+	s.tagger.Close()
 	s.cleanupBackups()
 	if errors.Is(err, http.ErrServerClosed) {
 		err = nil

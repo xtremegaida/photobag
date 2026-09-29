@@ -1,17 +1,21 @@
 // Package analysis runs images through a vision-language model behind an
 // OpenAI-compatible API: OCR, captions, Danbooru tags and categories.
+// Danbooru tags can come from a WD tagger instead.
 package analysis
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"time"
 
 	"photobag/internal/bag"
+	"photobag/internal/library"
 	"photobag/internal/llm"
+	"photobag/internal/tagger"
 )
 
 // Settings configure the model connection and the pipelines. They are
@@ -46,16 +50,52 @@ type TextOptions struct {
 	Prompt string `json:"prompt"`
 }
 
+// Where Danbooru tags come from.
+const (
+	DanbooruFromModel  = "model"  // the vision model
+	DanbooruFromTagger = "tagger" // a WD tagger server
+)
+
 // DanbooruOptions configure the Danbooru tag pipeline.
 type DanbooruOptions struct {
-	Prompt  string `json:"prompt"`
-	MaxTags int    `json:"maxTags"`
+	// Source is DanbooruFromModel or DanbooruFromTagger.
+	Source string `json:"source"`
+	Prompt string `json:"prompt"`
+	// MaxTags limits the (general) tags per image.
+	MaxTags int `json:"maxTags"`
 	// AddTags also attaches the tags to the image as PhotoBag tags.
 	AddTags bool `json:"addTags"`
-	// Prefix is prepended to PhotoBag tag names, e.g. "db:".
+	// Prefix is prepended to PhotoBag tag names, e.g. "db:" (for a tagger,
+	// to general tags; see TaggerOptions for the others).
 	Prefix string `json:"prefix"`
 	// Spaces writes PhotoBag tag names with spaces instead of underscores.
-	Spaces bool `json:"spaces"`
+	Spaces bool          `json:"spaces"`
+	Tagger TaggerOptions `json:"tagger"`
+}
+
+// TaggerOptions configure Danbooru tags from a WD tagger.
+type TaggerOptions struct {
+	// Local uses the tagger installed with "photobag tagger install";
+	// otherwise the server at Endpoint (http://host:port).
+	Local    bool   `json:"local"`
+	Endpoint string `json:"endpoint"`
+	// General, character and rating tags: whether to keep them, and the
+	// confidence they need.
+	General   TagFilter `json:"general"`
+	Character TagFilter `json:"character"`
+	Rating    TagFilter `json:"rating"`
+	// CharacterPrefix and RatingPrefix are prepended to the PhotoBag tag
+	// names of character and rating tags (general tags use
+	// DanbooruOptions.Prefix).
+	CharacterPrefix string `json:"characterPrefix"`
+	RatingPrefix    string `json:"ratingPrefix"`
+}
+
+// TagFilter chooses the tags of one tagger category.
+type TagFilter struct {
+	Include bool `json:"include"`
+	// Threshold is the minimum confidence, 0–1.
+	Threshold float64 `json:"threshold"`
 }
 
 // CategoryOptions configure the category pipeline.
@@ -77,8 +117,13 @@ func Defaults() Settings {
 		Concurrency:    2,
 		TimeoutSeconds: 300,
 		ImageSize:      1024,
-		Danbooru:       DanbooruOptions{MaxTags: 30, Spaces: true},
-		Category:       CategoryOptions{Levels: 1},
+		Danbooru: DanbooruOptions{Source: DanbooruFromModel, MaxTags: 30, Spaces: true, Tagger: TaggerOptions{
+			General:      TagFilter{Include: true, Threshold: 0.35},
+			Character:    TagFilter{Include: true, Threshold: 0.85},
+			Rating:       TagFilter{Include: true},
+			RatingPrefix: "rating:",
+		}},
+		Category: CategoryOptions{Levels: 1},
 	}
 }
 
@@ -136,6 +181,21 @@ func (s *Settings) normalize() {
 	s.Category.Levels = clamp(s.Category.Levels, 1, 2, 1)
 	s.Danbooru.Prefix = strings.TrimLeft(s.Danbooru.Prefix, " ")
 	s.Category.Prefix = strings.TrimLeft(s.Category.Prefix, " ")
+	if s.Danbooru.Source != DanbooruFromTagger {
+		s.Danbooru.Source = DanbooruFromModel
+	}
+	t := &s.Danbooru.Tagger
+	t.Endpoint = tagger.NormalizeEndpoint(t.Endpoint)
+	t.General.Threshold = clampScore(t.General.Threshold, 0.01)
+	t.Character.Threshold = clampScore(t.Character.Threshold, 0.01)
+	t.Rating.Threshold = clampScore(t.Rating.Threshold, 0)
+	t.CharacterPrefix = strings.TrimLeft(t.CharacterPrefix, " ")
+	t.RatingPrefix = strings.TrimLeft(t.RatingPrefix, " ")
+}
+
+// clampScore keeps a threshold within lo–1, rounded to 0.001.
+func clampScore(v, lo float64) float64 {
+	return math.Round(max(lo, min(1, v))*1000) / 1000
 }
 
 // Validate checks settings for mistakes a person should fix.
@@ -152,7 +212,12 @@ func (s Settings) Validate() error {
 	if _, err := s.extra(); err != nil {
 		return err
 	}
-	for _, p := range []string{s.Danbooru.Prefix, s.Category.Prefix} {
+	if e := s.Danbooru.Tagger.Endpoint; e != "" {
+		if err := tagger.ValidateEndpoint(e); err != nil {
+			return err
+		}
+	}
+	for _, p := range []string{s.Danbooru.Prefix, s.Category.Prefix, s.Danbooru.Tagger.CharacterPrefix, s.Danbooru.Tagger.RatingPrefix} {
 		if len([]rune(p)) > 40 {
 			return fmt.Errorf("tag prefixes must be at most 40 characters")
 		}
@@ -175,6 +240,24 @@ func (s Settings) extra() (map[string]any, error) {
 
 // Configured reports whether an endpoint is set.
 func (s Settings) Configured() bool { return s.Endpoint != "" }
+
+// UsesTagger reports whether a pipeline uses the tagger instead of the
+// vision model.
+func (s Settings) UsesTagger(pipeline string) bool {
+	return pipeline == library.PipelineDanbooru && s.Danbooru.Source == DanbooruFromTagger
+}
+
+// Backends reports whether pipelines need the vision model and the tagger.
+func (s Settings) Backends(pipelines []string) (model, tagger bool) {
+	for _, p := range pipelines {
+		if s.UsesTagger(p) {
+			tagger = true
+		} else {
+			model = true
+		}
+	}
+	return model, tagger
+}
 
 // Client builds an API client from the settings.
 func (s Settings) Client(apiKey string) (*llm.Client, error) {

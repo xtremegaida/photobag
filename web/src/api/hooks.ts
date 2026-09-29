@@ -23,6 +23,7 @@ import type {
   Sort,
   Stats,
   Tag,
+  TaggerStatus,
 } from "./types";
 
 export const qk = {
@@ -44,6 +45,7 @@ export const qk = {
   analysisSettings: ["analysis-settings"] as const,
   analysisStats: ["analysis-stats"] as const,
   analysisPlan: (o: AnalysisOptions) => ["analysis-plan", o] as const,
+  taggerStatus: ["tagger-status"] as const,
 };
 
 /** Maps server "changed" topics to the query keys they invalidate. */
@@ -56,6 +58,7 @@ const topicKeys: Record<string, string[]> = {
   dedup: ["scans", "scan"],
   analysis: ["detail", "image", "ids", "count", "stats", "analysis-stats", "analysis-plan"],
   "analysis-settings": ["analysis-settings", "analysis-plan"],
+  tagger: ["tagger-status"],
 };
 
 export function invalidateTopics(qc: QueryClient, topics: string[]) {
@@ -168,6 +171,11 @@ export function useAnalysisSettings() {
     queryFn: () => api.get<AnalysisSettingsView>("/api/analysis/settings"),
     staleTime: 60_000,
   });
+}
+
+/** The local tagger's installation and process. */
+export function useTaggerStatus() {
+  return useQuery({ queryKey: qk.taggerStatus, queryFn: () => api.get<TaggerStatus>("/api/analysis/tagger") });
 }
 
 export function useAnalysisStats() {

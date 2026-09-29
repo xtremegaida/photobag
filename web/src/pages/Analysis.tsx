@@ -62,6 +62,8 @@ export function AnalysisPage() {
   };
 
   const configured = !!view?.settings.endpoint;
+  const tg = view?.settings.danbooru;
+  const tagger = tg?.source === "tagger" ? (tg.tagger.local ? "this computer" : tg.tagger.endpoint || "no address") : null;
   return (
     <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
       <ScrollArea style={{ flex: 1 }}>
@@ -75,15 +77,20 @@ export function AnalysisPage() {
                     {view.settings.model || "default model"} · {view.settings.endpoint}
                   </Badge>
                 ) : (
-                  <Badge variant="light" color="orange">
-                    not connected
+                  <Badge variant="light" color={tagger ? "gray" : "orange"}>
+                    no model connected
                   </Badge>
                 ))}
+              {tagger && (
+                <Badge variant="light" color="grape" tt="none">
+                  WD tagger · {tagger}
+                </Badge>
+              )}
             </Group>
             <Text c="dimmed" size="sm" mt={4} maw={760}>
               A vision model describes your images: captions for people who cannot see them, the text they contain,
               Danbooru tags and categories. Results are stored in the bag, can be searched from the library, and
-              categories (and optionally Danbooru tags) become tags.
+              categories (and optionally Danbooru tags) become tags. Danbooru tags can come from a WD tagger instead.
             </Text>
           </div>
           {error && <Alert color="red">{errorMessage(error)}</Alert>}
@@ -105,7 +112,7 @@ export function AnalysisPage() {
                 </Tabs.Tab>
               </Tabs.List>
               <Tabs.Panel value="run">
-                <RunTab configured={configured} onSetup={() => setTab("connection")} />
+                <RunTab settings={view.settings} onSetup={setTab} />
               </Tabs.Panel>
               <Tabs.Panel value="connection">
                 <ConnectionTab view={view} draft={draft} onChange={change} apiKey={apiKey} onApiKey={setApiKey} />

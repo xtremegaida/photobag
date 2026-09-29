@@ -1,7 +1,6 @@
 import {
   Alert,
   Anchor,
-  Badge,
   Button,
   Card,
   Checkbox,
@@ -25,10 +24,12 @@ import { IconFlask, IconRefresh, IconTags } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, errorMessage, thumbUrl } from "../../api/client";
-import { useAnalysisStats, useSubmitJob } from "../../api/hooks";
+import { useAnalysisStats, useSubmitJob, useTaggerStatus } from "../../api/hooks";
 import type { AnalysisOutcome, AnalysisSettings, AnalysisSettingsView } from "../../api/types";
-import { formatDuration, PIPELINES, type PipelineId } from "../../lib/pipelines";
+import { formatMillis, notReady, PIPELINES, usesTagger, type PipelineId } from "../../lib/pipelines";
 import { useSelection } from "../../stores/selection";
+import { DanbooruTags } from "../DanbooruTags";
+import { TaggerSettings } from "./TaggerSettings";
 
 interface Props {
   view: AnalysisSettingsView;
@@ -40,7 +41,7 @@ interface Props {
 }
 
 /** Re-applies tag options to results already stored (no model requests). */
-function RetagButton({ pipeline, label, dirty }: { pipeline: "danbooru" | "category"; label: string; dirty: boolean }) {
+function RetagButton({ pipeline, label, dirty, what }: { pipeline: "danbooru" | "category"; label: string; dirty: boolean; what?: string }) {
   const { data: stats } = useAnalysisStats();
   const submit = useSubmitJob();
   const analysed = stats?.find((s) => s.pipeline === pipeline)?.analysed ?? 0;
@@ -68,7 +69,7 @@ function RetagButton({ pipeline, label, dirty }: { pipeline: "danbooru" | "categ
         </Button>
       </Tooltip>
       <Text size="xs" c="dimmed">
-        For the {analysed.toLocaleString()} image(s) already analysed, using the saved options; no requests are sent.
+        For the {analysed.toLocaleString()} image(s) already analysed, using the saved {what ?? "options"}; no requests are sent.
       </Text>
     </Group>
   );
@@ -94,13 +95,13 @@ function OutcomeView({ o }: { o: AnalysisOutcome }) {
           <Text size="sm">{o.error}</Text>
         </Alert>
       ) : o.pipeline === "danbooru" ? (
-        <Group gap={4}>
-          {(o.tags ?? []).map((t) => (
-            <Badge key={t} variant="light" tt="none">
-              {t}
-            </Badge>
-          ))}
-        </Group>
+        o.tags?.length || o.rating ? (
+          <DanbooruTags tags={o.tags} characters={o.characters} rating={o.rating} ratingScore={o.ratingScore} scores={o.scores} />
+        ) : (
+          <Text size="sm" c="dimmed" fs="italic">
+            No tags reached the minimum confidence
+          </Text>
+        )
       ) : o.pipeline === "ocr" && !o.text ? (
         <Text size="sm" c="dimmed" fs="italic">
           No text found
@@ -116,11 +117,15 @@ function OutcomeView({ o }: { o: AnalysisOutcome }) {
         </Text>
       )}
       <Text size="xs" c="dimmed">
-        {o.model} · {formatDuration(o.millis)} · {o.promptTokens.toLocaleString()} + {o.completionTokens.toLocaleString()} tokens
+        {o.model} · {formatMillis(o.millis)}
+        {o.promptTokens + o.completionTokens > 0 &&
+          ` · ${o.promptTokens.toLocaleString()} + ${o.completionTokens.toLocaleString()} tokens`}
       </Text>
       {o.reply && o.reply !== o.text && (
         <Spoiler maxHeight={0} showLabel="Show the raw reply" hideLabel="Hide the raw reply">
-          <Code block>{o.reply}</Code>
+          <Code block style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+            {o.reply}
+          </Code>
         </Spoiler>
       )}
       {o.reasoning && (
@@ -137,6 +142,8 @@ function OutcomeView({ o }: { o: AnalysisOutcome }) {
 /** Runs one pipeline on one image with the draft settings, storing nothing. */
 function TryPanel({ id, draft, apiKey }: { id: PipelineId; draft: AnalysisSettings; apiKey: string | undefined }) {
   const selected = useSelection((s) => s.selected);
+  const { data: tagger } = useTaggerStatus();
+  const blocked = notReady(draft, id, tagger);
   const [imageId, setImageId] = useState<number>(0);
   const tryIt = useMutation({
     mutationFn: (image: number) =>
@@ -158,7 +165,7 @@ function TryPanel({ id, draft, apiKey }: { id: PipelineId; draft: AnalysisSettin
           leftSection={<IconFlask size={16} />}
           onClick={() => tryIt.mutate(0)}
           loading={tryIt.isPending}
-          disabled={!draft.endpoint}
+          disabled={!!blocked}
         >
           Try on a random image
         </Button>
@@ -172,10 +179,15 @@ function TryPanel({ id, draft, apiKey }: { id: PipelineId; draft: AnalysisSettin
             On the selected image
           </Button>
         )}
-        <Text size="xs" c="dimmed">
-          Uses the settings on this page; nothing is stored.
+        <Text size="xs" c={blocked ? "orange" : "dimmed"}>
+          {blocked ?? "Uses the settings on this page; nothing is stored."}
         </Text>
       </Group>
+      {tryIt.isPending && usesTagger(draft, id) && draft.danbooru.tagger.local && tagger?.state !== "running" && (
+        <Text size="xs" c="dimmed">
+          Starting the local tagger; loading the model can take a minute…
+        </Text>
+      )}
       {tryIt.error && (
         <Text size="sm" c="red">
           {errorMessage(tryIt.error)}
@@ -240,6 +252,7 @@ function tagExample(prefix: string, spaces: boolean) {
 
 /** Per-pipeline options, instructions and a try-out. */
 export function PipelinesTab({ view, draft, onChange, apiKey, dirty }: Props) {
+  const { data: tagger } = useTaggerStatus();
   const db = draft.danbooru;
   const cat = draft.category;
   const setDb = (p: Partial<AnalysisSettings["danbooru"]>) => onChange({ danbooru: { ...db, ...p } });
@@ -271,24 +284,52 @@ export function PipelinesTab({ view, draft, onChange, apiKey, dirty }: Props) {
             </Text>
             {p.id === "danbooru" && (
               <Stack gap="xs">
+                <Group gap="sm">
+                  <Text size="sm" fw={500}>
+                    Tags from
+                  </Text>
+                  <SegmentedControl
+                    size="xs"
+                    data={[
+                      { value: "model", label: "The vision model" },
+                      { value: "tagger", label: "A WD tagger" },
+                    ]}
+                    value={db.source}
+                    onChange={(v) =>
+                      // A tagger installed here is the natural choice when no server is set.
+                      setDb({
+                        source: v,
+                        tagger: v === "tagger" && !db.tagger.endpoint && tagger?.installation.ready ? { ...db.tagger, local: true } : db.tagger,
+                      })
+                    }
+                  />
+                </Group>
+                <Text size="xs" c="dimmed">
+                  {db.source === "tagger"
+                    ? "A WD tagger (SmilingWolf's WD v3 models) knows the real Danbooru tags, gives each a confidence and takes well under a second per image. The vision model is not used for these tags."
+                    : "The vision model writes the tags, following the instructions below. A WD tagger is faster and knows the real Danbooru tags."}
+                </Text>
                 <Switch
                   label="Also add them as PhotoBag tags"
                   description="Re-running replaces the tags it added; tags you add yourself are never removed."
                   checked={db.addTags}
                   onChange={(e) => setDb({ addTags: e.currentTarget.checked })}
                 />
+                {db.source === "tagger" && <TaggerSettings draft={draft} onChange={onChange} />}
                 <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                  <TextInput
-                    label="Tag name prefix"
-                    description={`long_hair becomes “${tagExample(db.prefix, db.spaces)}”`}
-                    placeholder="none, or e.g. db:"
-                    value={db.prefix}
-                    onChange={(e) => setDb({ prefix: e.currentTarget.value })}
-                    disabled={!db.addTags}
-                  />
+                  {db.source === "model" && (
+                    <TextInput
+                      label="Tag name prefix"
+                      description={`long_hair becomes “${tagExample(db.prefix, db.spaces)}”`}
+                      placeholder="none, or e.g. db:"
+                      value={db.prefix}
+                      onChange={(e) => setDb({ prefix: e.currentTarget.value })}
+                      disabled={!db.addTags}
+                    />
+                  )}
                   <NumberInput
                     label="At most"
-                    description="Tags per image"
+                    description={db.source === "tagger" ? "General tags per image (most confident first)" : "Tags per image"}
                     min={1}
                     max={200}
                     value={db.maxTags}
@@ -305,6 +346,7 @@ export function PipelinesTab({ view, draft, onChange, apiKey, dirty }: Props) {
                 <RetagButton
                   pipeline="danbooru"
                   label={view.settings.danbooru.addTags ? "Update tags on analysed images" : "Remove their tags from analysed images"}
+                  what={view.settings.danbooru.addTags ? "prefixes and, for tagger results, categories and confidences" : undefined}
                   dirty={dirty}
                 />
               </Stack>
@@ -349,7 +391,7 @@ export function PipelinesTab({ view, draft, onChange, apiKey, dirty }: Props) {
                 <RetagButton pipeline="category" label="Update category tags on analysed images" dirty={dirty} />
               </Stack>
             )}
-            <PromptField view={view} draft={draft} id={p.id} onChange={onChange} />
+            {!usesTagger(draft, p.id) && <PromptField view={view} draft={draft} id={p.id} onChange={onChange} />}
             <TryPanel id={p.id} draft={draft} apiKey={apiKey} />
           </Stack>
         </Card>

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createBatcher } from "../api/batcher";
 import { formatBytes, formatTaken, percent } from "./format";
-import { eta, formatDuration } from "./pipelines";
+import type { AnalysisSettings, TaggerStatus } from "../api/types";
+import { eta, formatDuration, formatMillis, notReady, usesTagger } from "./pipelines";
 import { galleryParams, hasFilters, parseGallery } from "./query-url";
 import { rangeBetween, toggled } from "./selection";
 
@@ -93,5 +94,35 @@ describe("batcher", () => {
     const results = await Promise.allSettled([b.load(1), b.load(2), b.load(1), b.load(3)]);
     expect(calls).toEqual([[1, 2, 3]]);
     expect(results.map((r) => (r.status === "fulfilled" ? r.value : "missing"))).toEqual(["v1", "v2", "v1", "missing"]);
+  });
+});
+
+describe("pipeline readiness", () => {
+  const settings = (over: { endpoint?: string; source?: string; local?: boolean; tagger?: string }) =>
+    ({
+      endpoint: over.endpoint ?? "",
+      danbooru: { source: over.source ?? "model", tagger: { local: over.local ?? false, endpoint: over.tagger ?? "" } },
+    }) as unknown as AnalysisSettings;
+  const status = (ready: boolean) =>
+    ({ installation: { ready, problem: ready ? undefined : "The tagger is not installed." } }) as TaggerStatus;
+
+  it("needs the model for model pipelines", () => {
+    expect(notReady(settings({}), "caption", undefined)).toMatch(/No vision model/);
+    expect(notReady(settings({ endpoint: "http://x/v1" }), "caption", undefined)).toBeNull();
+    expect(notReady(settings({ endpoint: "http://x/v1" }), "danbooru", undefined)).toBeNull();
+  });
+  it("needs a tagger, not the model, for tagger tags", () => {
+    const remote = settings({ source: "tagger" });
+    expect(usesTagger(remote, "danbooru")).toBe(true);
+    expect(usesTagger(remote, "caption")).toBe(false);
+    expect(notReady(remote, "danbooru", undefined)).toMatch(/No tagger address/);
+    expect(notReady(settings({ source: "tagger", tagger: "host:8000" }), "danbooru", undefined)).toBeNull();
+    const local = settings({ source: "tagger", local: true });
+    expect(notReady(local, "danbooru", status(false))).toBe("The tagger is not installed.");
+    expect(notReady(local, "danbooru", status(true))).toBeNull();
+  });
+  it("formats short durations in milliseconds", () => {
+    expect(formatMillis(230)).toBe("230 ms");
+    expect(formatMillis(12_400)).toBe("12s");
   });
 });

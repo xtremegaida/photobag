@@ -93,11 +93,13 @@ export interface ManifestEntry {
   scores?: { [key: string]: ScoreDetail};
   /**
    * Analysis results: the caption, the text found in the image ("" when
-   * there was none), Danbooru tags and the category ("Main / Sub").
+   * there was none), Danbooru tags (and the rating, from a tagger) and
+   * the category ("Main / Sub").
    */
   caption?: string;
   ocr?: string;
   danbooru?: string[];
+  rating?: string;
   category?: string;
 }
 /**

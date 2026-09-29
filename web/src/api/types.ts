@@ -35,7 +35,11 @@ export type {
   Progress as AnalysisProgress,
   Report as AnalysisReport,
   Settings as AnalysisSettings,
+  TagFilter,
+  TaggerCheck,
+  TaggerOptions,
 } from "./gen/analysis";
+export type { Installation as TaggerInstallation, LocalStatus as TaggerStatus } from "./gen/tagger";
 
 export interface ImageDetail {
   image: import("./gen/library").Image;

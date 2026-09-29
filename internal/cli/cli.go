@@ -55,7 +55,7 @@ Point any command at a bag file; it is created if it does not exist.`,
 
 	root.AddCommand(
 		serveCmd(g), importCmd(g), exportCmd(g), backupCmd(g),
-		dedupCmd(g), analyzeCmd(g), infoCmd(g), compactCmd(g), refreshCmd(g),
+		dedupCmd(g), analyzeCmd(g), taggerCmd(), infoCmd(g), compactCmd(g), refreshCmd(g),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -101,9 +101,10 @@ func (q *queryFlags) query() query.ImageQuery {
 
 // status prints a single updating line on terminals.
 type status struct {
-	tty  bool
-	last time.Time
-	w    int
+	tty     bool
+	last    time.Time
+	w       int
+	printed string // last line printed without a terminal
 }
 
 func newStatus() *status {
@@ -118,7 +119,8 @@ func (s *status) update(force bool, format string, args ...any) {
 	s.last = time.Now()
 	line := fmt.Sprintf(format, args...)
 	if !s.tty {
-		if force {
+		if force && line != s.printed {
+			s.printed = line
 			fmt.Fprintln(os.Stderr, line)
 		}
 		return

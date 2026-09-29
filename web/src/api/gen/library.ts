@@ -23,7 +23,7 @@ export const PipelineCategory = "category"; // one category, or a main and a sub
 /**
  * Analysis is the current result of one pipeline for one image.
  */
-export interface Analysis {
+export interface Analysis extends AnalysisData {
   pipeline: string;
   /**
    * Text is the result as plain text: the caption, the text found in the
@@ -31,15 +31,6 @@ export interface Analysis {
    * empty when the pipeline found nothing (e.g. no legible text).
    */
   text: string;
-  /**
-   * Tags are the Danbooru tags, in the model's order.
-   */
-  tags?: string[];
-  /**
-   * Main and Sub are the category (Sub only with two levels).
-   */
-  main?: string;
-  sub?: string;
   /**
    * Model that produced the result.
    */
@@ -52,12 +43,37 @@ export interface Analysis {
   updatedAt: number /* int64 */;
 }
 /**
- * AnalysisData is the pipeline-specific part stored as JSON.
+ * AnalysisData is the pipeline-specific part of a result, stored as JSON.
  */
 export interface AnalysisData {
+  /**
+   * Tags are the Danbooru tags in the model's order (from a tagger:
+   * character tags, then general tags, most confident first).
+   */
   tags?: string[];
+  /**
+   * Main and Sub are the category (Sub only with two levels).
+   */
   main?: string;
   sub?: string;
+  /**
+   * Source is "tagger" for Danbooru tags from a WD tagger, which also
+   * fills in the fields below.
+   */
+  source?: string;
+  /**
+   * Characters lists which of Tags are character tags.
+   */
+  characters?: string[];
+  /**
+   * Rating is general, sensitive, questionable or explicit.
+   */
+  rating?: string;
+  ratingScore?: number /* float64 */;
+  /**
+   * Scores are the tagger's confidence in each tag, 0–1.
+   */
+  scores?: { [key: string]: number /* float64 */};
 }
 /**
  * AnalysisWrite stores one pipeline result.

@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"photobag/internal/library"
 	"photobag/internal/llm"
 	"photobag/internal/query"
+	"photobag/internal/tagger"
 )
 
 // Modes choose which images a job sends to the model. Results a person
@@ -187,6 +189,10 @@ type Report struct {
 
 const maxFailures = 200
 
+// taggerWorkers is how many images are prepared and sent at once when
+// only the tagger is used.
+const taggerWorkers = 4
+
 // Outcome is the result of one pipeline run on one image.
 type Outcome struct {
 	Pipeline string `json:"pipeline"`
@@ -195,6 +201,12 @@ type Outcome struct {
 	Tags []string `json:"tags,omitempty"`
 	Main string   `json:"main,omitempty"`
 	Sub  string   `json:"sub,omitempty"`
+	// From a tagger: which Tags are character tags, the rating, and each
+	// tag's confidence.
+	Characters  []string           `json:"characters,omitempty"`
+	Rating      string             `json:"rating,omitempty"`
+	RatingScore float64            `json:"ratingScore,omitempty"`
+	Scores      map[string]float64 `json:"scores,omitempty"`
 	// TagNames are the PhotoBag tags attached for this result.
 	TagNames         []string `json:"tagNames,omitempty"`
 	Reply            string   `json:"reply"`
@@ -206,19 +218,23 @@ type Outcome struct {
 	Error            string   `json:"error,omitempty"`
 	Stored           bool     `json:"stored"`
 	attach           bool
+	data             *library.AnalysisData
 }
 
-// analyser runs pipelines with one model client.
+// analyser runs pipelines with one set of clients.
 type analyser struct {
-	s      Settings
-	client *llm.Client
-	cats   []Category
-	mu     sync.Mutex
-	inUse  map[string]int // free-form categories already assigned
+	s       Settings
+	clients Clients
+	cats    []Category
+	mu      sync.Mutex
+	inUse   map[string]int // free-form categories already assigned
 }
 
-func newAnalyser(ctx context.Context, b *bag.Bag, s Settings, client *llm.Client, pipelines []string) (*analyser, error) {
-	a := &analyser{s: s, client: client, cats: ParseCategories(s.Category.Categories), inUse: map[string]int{}}
+func newAnalyser(ctx context.Context, b *bag.Bag, s Settings, clients Clients, pipelines []string) (*analyser, error) {
+	if err := clients.check(s, pipelines); err != nil {
+		return nil, err
+	}
+	a := &analyser{s: s, clients: clients, cats: ParseCategories(s.Category.Categories), inUse: map[string]int{}}
 	for _, p := range pipelines {
 		if p == library.PipelineCategory && len(a.cats) == 0 {
 			existing, err := library.ExistingCategories(ctx, b, 200)
@@ -278,7 +294,7 @@ func (a *analyser) parse(pipeline, reply string, o *Outcome) error {
 		}
 		o.Tags, o.Text = tags, strings.Join(tags, ", ")
 		if a.s.Danbooru.AddTags {
-			o.TagNames, o.attach = a.s.danbooruTagNames(tags), true
+			o.TagNames, o.attach = a.s.danbooruNames(library.AnalysisData{Tags: tags}), true
 		}
 	case library.PipelineCategory:
 		main, sub, err := parseCategory(reply, a.s.Category.Levels, a.cats, a.existing())
@@ -291,9 +307,12 @@ func (a *analyser) parse(pipeline, reply string, o *Outcome) error {
 	return nil
 }
 
-// run sends one image through one pipeline. A reply that does not parse
-// is answered with a hint once.
+// run sends one image through one pipeline. A model reply that does not
+// parse is answered with a hint once.
 func (a *analyser) run(ctx context.Context, pipeline string, img []byte) (*Outcome, error) {
+	if a.s.UsesTagger(pipeline) {
+		return a.runTagger(ctx, img)
+	}
 	o := &Outcome{Pipeline: pipeline, Model: a.s.Model}
 	msgs := []llm.Message{
 		{Role: "system", Text: a.s.system()},
@@ -301,7 +320,7 @@ func (a *analyser) run(ctx context.Context, pipeline string, img []byte) (*Outco
 	}
 	start := time.Now()
 	for attempt := 0; ; attempt++ {
-		r, err := a.client.Chat(ctx, msgs)
+		r, err := a.clients.Model.Chat(ctx, msgs)
 		o.Millis = time.Since(start).Milliseconds()
 		if err != nil {
 			o.Error = err.Error()
@@ -337,7 +356,10 @@ func (a *analyser) store(ctx context.Context, b *bag.Bag, id int64, o *Outcome, 
 		ImageID: id, Pipeline: o.Pipeline, Text: o.Text, Model: o.Model,
 		Config: a.s.ConfigHash(o.Pipeline), Force: force,
 	}
-	if len(o.Tags) > 0 || o.Main != "" {
+	switch {
+	case o.data != nil:
+		w.Data = o.data
+	case len(o.Tags) > 0 || o.Main != "":
 		w.Data = &library.AnalysisData{Tags: o.Tags, Main: o.Main, Sub: o.Sub}
 	}
 	if o.attach {
@@ -363,23 +385,55 @@ func PrepareImage(ctx context.Context, b *bag.Bag, id int64, size int) ([]byte, 
 	return imaging.Preview(imaging.Format(format), raw, size)
 }
 
-// Run executes a plan (see MakePlan) with the given client.
-func Run(ctx context.Context, b *bag.Bag, s Settings, client *llm.Client, plan *Plan, opts Options, progress func(Progress)) (*Report, error) {
+// isFatal reports errors that will recur on every request.
+func isFatal(err error) bool { return llm.IsFatal(err) || tagger.IsFatal(err) }
+
+// Run executes a plan (see MakePlan) with the given clients.
+func Run(ctx context.Context, b *bag.Bag, s Settings, clients Clients, plan *Plan, opts Options, progress func(Progress)) (*Report, error) {
 	if progress == nil {
 		progress = func(Progress) {}
 	}
 	start := time.Now()
-	rep := &Report{Images: len(plan.work), Requests: plan.Requests, ByPipeline: map[string]int{}, Model: s.Model, Failures: []Failure{}}
-	a, err := newAnalyser(ctx, b, s, client, opts.Pipelines)
+	rep := &Report{Images: len(plan.work), Requests: plan.Requests, ByPipeline: map[string]int{}, Failures: []Failure{}}
+	a, err := newAnalyser(ctx, b, s, clients, opts.Pipelines)
 	if err != nil {
 		return rep, err
 	}
+	useModel, useTagger := s.Backends(opts.Pipelines)
+	var names []string
+	if useModel {
+		names = append(names, cmp.Or(s.Model, "default model"))
+	}
+	pr := Progress{Images: len(plan.work), Total: plan.Requests}
+	if useTagger && len(plan.work) > 0 {
+		// Fail early when the tagger is unreachable; a local one starts now.
+		pr.Current = "Connecting to the tagger…"
+		if _, ok := clients.Tagger.(*tagger.Local); ok {
+			pr.Current = "Starting the local tagger…"
+		}
+		progress(pr)
+		if _, err := clients.Tagger.Health(ctx); err != nil {
+			if ctx.Err() != nil {
+				rep.Cancelled = true
+				return rep, ctx.Err()
+			}
+			rep.Stopped = "the tagger is not available: " + err.Error()
+			return rep, errors.New(rep.Stopped)
+		}
+		pr.Current = ""
+	}
+	if useTagger {
+		names = append(names, clients.Tagger.Name())
+	}
+	rep.Model = strings.Join(names, " + ")
 	ctx, stop := context.WithCancelCause(ctx)
 	defer stop(nil)
 
 	var mu sync.Mutex
-	pr := Progress{Images: len(plan.work), Total: plan.Requests}
-	successes, streak := 0, 0
+	// The circuit breaker counts per service (keyed by "uses the tagger"),
+	// so a failing tagger is noticed while the model succeeds, and the
+	// other way round.
+	successes, streak := map[bool]int{}, map[bool]int{}
 	progress(pr)
 	fail := func(id int64, name, pipeline string, err error) {
 		if ctx.Err() != nil {
@@ -392,27 +446,36 @@ func Run(ctx context.Context, b *bag.Bag, s Settings, client *llm.Client, plan *
 		if len(rep.Failures) < maxFailures {
 			rep.Failures = append(rep.Failures, Failure{ImageID: id, Name: name, Pipeline: pipeline, Error: err.Error()})
 		}
-		streak++
+		t := s.UsesTagger(pipeline)
+		streak[t]++
+		what := "requests"
+		if t {
+			what = "tagger requests"
+		}
 		switch {
-		case llm.IsFatal(err):
+		case isFatal(err):
 			stop(err)
-		case successes == 0 && streak >= 5:
-			stop(fmt.Errorf("the first %d requests failed; last error: %v", streak, err))
-		case streak >= 25:
-			stop(fmt.Errorf("%d requests in a row failed; last error: %v", streak, err))
+		case successes[t] == 0 && streak[t] >= 5:
+			stop(fmt.Errorf("the first %d %s failed; last error: %v", streak[t], what, err))
+		case streak[t] >= 25:
+			stop(fmt.Errorf("%d %s in a row failed; last error: %v", streak[t], what, err))
 		}
 	}
 
-	names := map[int64]string{}
+	imageNames := map[int64]string{}
 	jobs := make(chan work)
 	var wg sync.WaitGroup
-	for w := 0; w < min(s.Concurrency, max(1, len(plan.work))); w++ {
+	workers := s.Concurrency
+	if !useModel {
+		workers = taggerWorkers // the tagger is quick: keep images coming
+	}
+	for w := 0; w < min(workers, max(1, len(plan.work))); w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for wk := range jobs {
 				mu.Lock()
-				name := names[wk.id]
+				name := imageNames[wk.id]
 				mu.Unlock()
 				img, err := PrepareImage(ctx, b, wk.id, s.ImageSize)
 				if err != nil {
@@ -453,8 +516,8 @@ func Run(ctx context.Context, b *bag.Bag, s Settings, client *llm.Client, plan *
 						pr.Stored++
 						rep.Stored++
 						rep.ByPipeline[p]++
-						successes++
-						streak = 0
+						successes[s.UsesTagger(p)]++
+						streak[s.UsesTagger(p)] = 0
 					default:
 						pr.Done++
 						rep.Skipped++
@@ -478,7 +541,7 @@ func Run(ctx context.Context, b *bag.Bag, s Settings, client *llm.Client, plan *
 			if ims, err := library.GetImages(ctx, b, ids); err == nil {
 				mu.Lock()
 				for _, im := range ims {
-					names[im.ID] = im.Name
+					imageNames[im.ID] = im.Name
 				}
 				mu.Unlock()
 			}
@@ -511,12 +574,12 @@ func Run(ctx context.Context, b *bag.Bag, s Settings, client *llm.Client, plan *
 // RunOne sends one image through pipelines now. With save the results are
 // stored and their tags attached; as this is an explicit request, results a
 // person edited are replaced too.
-func RunOne(ctx context.Context, b *bag.Bag, s Settings, client *llm.Client, id int64, pipelines []string, save bool) ([]Outcome, error) {
+func RunOne(ctx context.Context, b *bag.Bag, s Settings, clients Clients, id int64, pipelines []string, save bool) ([]Outcome, error) {
 	opts := Options{Pipelines: pipelines}
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
-	a, err := newAnalyser(ctx, b, s, client, opts.Pipelines)
+	a, err := newAnalyser(ctx, b, s, clients, opts.Pipelines)
 	if err != nil {
 		return nil, err
 	}
@@ -538,7 +601,7 @@ func RunOne(ctx context.Context, b *bag.Bag, s Settings, client *llm.Client, id 
 				return out, ctx.Err()
 			}
 			o.Error = err.Error()
-			if llm.IsFatal(err) {
+			if isFatal(err) {
 				return append(out, *o), err
 			}
 		}
@@ -586,7 +649,7 @@ func Retag(ctx context.Context, b *bag.Bag, s Settings, pipeline string, progres
 		}
 		var names []string
 		if pipeline == library.PipelineDanbooru {
-			names = s.danbooruTagNames(d.Tags)
+			names = s.danbooruNames(d)
 		} else if d.Main != "" {
 			names = s.categoryTagNames(d.Main, d.Sub)
 		}

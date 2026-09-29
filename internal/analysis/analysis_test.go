@@ -14,6 +14,7 @@ import (
 	"photobag/internal/llm"
 	"photobag/internal/llm/llmtest"
 	"photobag/internal/query"
+	"photobag/internal/tagger/taggertest"
 	"photobag/internal/testimg"
 )
 
@@ -59,7 +60,7 @@ func TestParseDanbooru(t *testing.T) {
 	}
 	s := Defaults()
 	s.Danbooru.Prefix = "db:"
-	if n := s.danbooruTagNames([]string{"long_hair", "1girl"}); strings.Join(n, "|") != "db:long hair|db:1girl" {
+	if n := s.danbooruNames(library.AnalysisData{Tags: []string{"long_hair", "1girl"}}); strings.Join(n, "|") != "db:long hair|db:1girl" {
 		t.Errorf("tag names %v", n)
 	}
 }
@@ -209,7 +210,7 @@ func TestRunStoresResultsAndTags(t *testing.T) {
 		t.Fatalf("plan %+v %v", plan, err)
 	}
 	var last Progress
-	rep, err := Run(ctx, b, s, client, plan, opts, func(p Progress) { last = p })
+	rep, err := Run(ctx, b, s, Clients{Model: client}, plan, opts, func(p Progress) { last = p })
 	if err != nil || rep.Stored != 4*n || rep.Failed != 0 || last.Done != 4*n {
 		t.Fatalf("run: %v %+v last %+v", err, rep, last)
 	}
@@ -265,7 +266,7 @@ func TestRunStoresResultsAndTags(t *testing.T) {
 	// A job keeps the correction; an explicit re-run of the image replaces it.
 	allCaptions := Options{Pipelines: []string{"caption"}, Mode: ModeAll}
 	plan, _ = MakePlan(ctx, b, s, allCaptions)
-	if rep, err := Run(ctx, b, s, client, plan, allCaptions, nil); err != nil || rep.Stored != n-1 {
+	if rep, err := Run(ctx, b, s, Clients{Model: client}, plan, allCaptions, nil); err != nil || rep.Stored != n-1 {
 		t.Fatalf("caption job %v %+v", err, rep)
 	}
 	if im, _ := library.GetImage(ctx, b, id); im.Caption != "My own words" {
@@ -273,7 +274,7 @@ func TestRunStoresResultsAndTags(t *testing.T) {
 	}
 	// A new category replaces the old tags; a person's tag survives.
 	category = "People"
-	out, err := RunOne(ctx, b, s, client, id, []string{"category", "caption"}, true)
+	out, err := RunOne(ctx, b, s, Clients{Model: client}, id, []string{"category", "caption"}, true)
 	if err != nil || len(out) != 2 || !out[0].Stored || !out[1].Stored || out[1].Error != "" {
 		t.Fatalf("run one: %v %+v", err, out)
 	}
@@ -323,7 +324,7 @@ func TestRunStopsOnPersistentErrors(t *testing.T) {
 		client := llm.New(llm.Config{Endpoint: fake.URL, Retries: 1, RetryDelay: time.Millisecond})
 		opts := Options{Pipelines: []string{"caption"}}
 		plan, _ := MakePlan(ctx, b, s, opts)
-		rep, err := Run(ctx, b, s, client, plan, opts, nil)
+		rep, err := Run(ctx, b, s, Clients{Model: client}, plan, opts, nil)
 		fake.Close()
 		if err == nil || !strings.Contains(err.Error(), tc.want) || rep.Stopped == "" || rep.Stored != 0 {
 			t.Errorf("%d: err %v report %+v", tc.status, err, rep)
@@ -367,7 +368,7 @@ func TestRetag(t *testing.T) {
 	client, _ := s.Client("")
 	opts := Options{Pipelines: []string{"danbooru", "category"}}
 	plan, _ := MakePlan(ctx, b, s, opts)
-	if _, err := Run(ctx, b, s, client, plan, opts, nil); err != nil {
+	if _, err := Run(ctx, b, s, Clients{Model: client}, plan, opts, nil); err != nil {
 		t.Fatal(err)
 	}
 	if tags := tagCounts(t, b); len(tags) != 2 || tags["Animals / Dogs"].Count != len(ids) {
@@ -393,5 +394,126 @@ func TestRetag(t *testing.T) {
 	}
 	if len(fake.Requests()) != requests {
 		t.Error("retag must not call the model")
+	}
+}
+
+func TestTaggerPipeline(t *testing.T) {
+	b, ids := setup(t)
+	ctx := context.Background()
+	fakeTagger := taggertest.New(func(r taggertest.Request) (taggertest.Reply, int) {
+		return taggertest.Reply{
+			General:    map[string]float64{"long_hair": 0.9, "outdoors": 0.7, "^_^": 0.6, "sky": 0.4, "cloud": 0.2},
+			Characters: map[string]float64{"hatsune_miku": 0.95, "kagamine_rin": 0.5},
+			Rating:     "sensitive", Score: 0.8,
+		}, 0
+	})
+	defer fakeTagger.Close()
+	fakeModel := llmtest.New(func(r llmtest.Request) (string, int) { return "A test image.", 0 })
+	defer fakeModel.Close()
+
+	s := Defaults()
+	s.Endpoint = fakeModel.URL
+	s.Danbooru.Source = DanbooruFromTagger
+	s.Danbooru.Tagger.Endpoint = fakeTagger.URL
+	s.Danbooru.AddTags, s.Danbooru.Prefix, s.Danbooru.MaxTags = true, "db:", 3
+	s.Danbooru.Tagger.CharacterPrefix = "character:"
+	s = s.Normalized()
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{Pipelines: []string{"caption", "danbooru"}}
+	clients, err := s.Clients("", nil, opts.Pipelines)
+	if err != nil || clients.Model == nil || clients.Tagger == nil {
+		t.Fatalf("clients %+v %v", clients, err)
+	}
+	plan, _ := MakePlan(ctx, b, s, opts)
+	rep, err := Run(ctx, b, s, clients, plan, opts, nil)
+	if err != nil || rep.Stored != 2*len(ids) || rep.Model != "default model + fake-tagger" {
+		t.Fatalf("report %+v %v", rep, err)
+	}
+	for _, r := range fakeModel.Requests() {
+		if strings.Contains(r.Prompt, "Danbooru") {
+			t.Fatal("Danbooru tags were asked of the model")
+		}
+	}
+	if q := fakeTagger.Requests()[0].Query; q.Get("general_threshold") != "0.35" || q.Get("character_threshold") != "0.85" || q.Get("include_characters") != "true" {
+		t.Fatalf("tagger query %v", q)
+	}
+	as, _ := library.Analyses(ctx, b, ids[0])
+	var db library.Analysis
+	for _, a := range as {
+		if a.Pipeline == "danbooru" {
+			db = a
+		}
+	}
+	// Character tags first, then at most 3 general tags; the rating apart.
+	if strings.Join(db.Tags, " ") != "hatsune_miku long_hair outdoors ^_^" || strings.Join(db.Characters, " ") != "hatsune_miku" ||
+		db.Rating != "sensitive" || db.Scores["outdoors"] != 0.7 || db.Model != "fake-tagger" || db.Source != "tagger" {
+		t.Fatalf("stored %+v", db)
+	}
+	if db.Text != "hatsune_miku, long_hair, outdoors, ^_^, rating:sensitive" {
+		t.Fatalf("text %q", db.Text)
+	}
+	if got := imageTags(t, b, ids[0]); got != "character:hatsune miku|db:^_^|db:long hair|db:outdoors|rating:sensitive" {
+		t.Fatalf("image tags %q", got)
+	}
+
+	// Tightening the filters retags without asking the tagger again.
+	sent := len(fakeTagger.Requests())
+	s.Danbooru.Tagger.General.Threshold = 0.8
+	s.Danbooru.Tagger.Rating.Include = false
+	s.Danbooru.Tagger.CharacterPrefix = ""
+	if n, err := Retag(ctx, b, s, "danbooru", nil); err != nil || n != len(ids) {
+		t.Fatalf("retag %d %v", n, err)
+	}
+	if got := imageTags(t, b, ids[0]); got != "db:long hair|hatsune miku" {
+		t.Fatalf("image tags after retag %q", got)
+	}
+	if len(fakeTagger.Requests()) != sent {
+		t.Fatal("retag called the tagger")
+	}
+	// The changed filters make the results outdated; the model's are not.
+	plan, _ = MakePlan(ctx, b, s, Options{Pipelines: []string{"caption", "danbooru"}, Mode: ModeChanged})
+	if plan.ByPipeline["danbooru"] != len(ids) || plan.ByPipeline["caption"] != 0 {
+		t.Fatalf("changed plan %+v", plan.ByPipeline)
+	}
+
+	// Without a model endpoint, tagger-only jobs still run.
+	s.Endpoint = ""
+	if _, err := s.Clients("", nil, []string{"danbooru"}); err != nil {
+		t.Fatalf("tagger only: %v", err)
+	}
+	if _, err := s.Clients("", nil, []string{"caption", "danbooru"}); err == nil {
+		t.Fatal("caption without an endpoint accepted")
+	}
+	out, err := RunOne(ctx, b, s, Clients{Tagger: clients.Tagger}, ids[1], []string{"danbooru"}, false)
+	if err != nil || len(out) != 1 || out[0].Rating != "" || len(out[0].TagNames) != 2 || out[0].Reply == "" {
+		t.Fatalf("try %+v %v", out, err)
+	}
+}
+
+func TestTaggerUnavailable(t *testing.T) {
+	b, ids := setup(t)
+	ctx := context.Background()
+	fakeTagger := taggertest.New(func(r taggertest.Request) (taggertest.Reply, int) { return taggertest.Reply{}, 400 })
+	s := Defaults()
+	s.Danbooru.Source = DanbooruFromTagger
+	s.Danbooru.Tagger.Endpoint = fakeTagger.URL
+	opts := Options{Pipelines: []string{"danbooru"}}
+	clients, _ := s.Clients("", nil, opts.Pipelines)
+	plan, _ := MakePlan(ctx, b, s, opts)
+	// Every request fails: the job stops after the first few.
+	rep, err := Run(ctx, b, s, clients, plan, opts, nil)
+	if err == nil || !strings.Contains(rep.Stopped, "the first 5 tagger requests failed") || rep.Failed >= len(ids)+taggerWorkers {
+		t.Fatalf("report %+v %v", rep, err)
+	}
+	if check := CheckTagger(ctx, clients.Tagger); check.OK || !strings.Contains(check.Message, "fake failure") || check.TagCount != 10861 {
+		t.Fatalf("check %+v", check)
+	}
+	// An unreachable tagger stops the job before it starts.
+	fakeTagger.Close()
+	rep, err = Run(ctx, b, s, clients, plan, opts, nil)
+	if err == nil || !strings.Contains(rep.Stopped, "the tagger is not available") || rep.Failed != 0 {
+		t.Fatalf("report %+v %v", rep, err)
 	}
 }

@@ -87,10 +87,12 @@ type ManifestEntry struct {
 	Tags         []string               `json:"tags"`
 	Scores       map[string]ScoreDetail `json:"scores,omitempty"`
 	// Analysis results: the caption, the text found in the image ("" when
-	// there was none), Danbooru tags and the category ("Main / Sub").
+	// there was none), Danbooru tags (and the rating, from a tagger) and
+	// the category ("Main / Sub").
 	Caption  string   `json:"caption,omitempty"`
 	OCR      *string  `json:"ocr,omitempty"`
 	Danbooru []string `json:"danbooru,omitempty"`
+	Rating   string   `json:"rating,omitempty"`
 	Category string   `json:"category,omitempty"`
 }
 
@@ -294,7 +296,7 @@ func manifestEntry(ctx context.Context, b *bag.Bag, rel string, im library.Image
 			t := a.Text
 			e.OCR = &t
 		case library.PipelineDanbooru:
-			e.Danbooru = a.Tags
+			e.Danbooru, e.Rating = a.Tags, a.Rating
 		case library.PipelineCategory:
 			e.Category = a.Text
 		}

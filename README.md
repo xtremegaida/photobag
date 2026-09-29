@@ -132,7 +132,7 @@ of images (all, tags/name, or the selection), and run one or more pipelines:
 | --- | --- |
 | **Caption** | a one- or two-sentence description for people who cannot see the image; also the image's alt text in the UI |
 | **Text in image (OCR)** | the legible text, keeping line breaks; blank when there is none |
-| **Danbooru tags** | Danbooru-style tags (`1girl`, `outdoors`, `long_hair`…); optionally also added as PhotoBag tags, with a prefix and spaces for underscores |
+| **Danbooru tags** | Danbooru-style tags (`1girl`, `outdoors`, `long_hair`…), from the vision model or a [WD tagger](#danbooru-tags-from-a-wd-tagger); optionally also added as PhotoBag tags, with a prefix and spaces for underscores |
 | **Category** | one category, or a main and a sub category, added as tags (`Nature`, `Nature / Skies`) |
 
 - **Categories** come from your list (`Main: Sub, Sub` per line). The answer
@@ -162,6 +162,54 @@ of images (all, tags/name, or the selection), and run one or more pipelines:
 - Analysis jobs run beside imports and exports, and results appear in the
   lightbox as they are stored, where they can be corrected, re-run or removed.
 
+#### Danbooru tags from a WD tagger
+
+The Danbooru pipeline can use a **WD tagger** (SmilingWolf's
+[WD v3 ONNX models](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3))
+instead of the vision model. It knows the real Danbooru vocabulary, gives
+every tag a confidence, and takes a fraction of a second per image on a GPU.
+Choose it under *Analysis → Pipelines & prompts → Danbooru tags → A WD tagger*:
+
+- **Where:** *This computer* uses the tagger installed with
+  `photobag tagger install`, which PhotoBag starts when needed and stops
+  after 10 idle minutes (freeing the GPU memory). *A tagger server* uses one
+  running elsewhere: give its `host:port`.
+- **Which tags:** general, character and rating tags can each be kept or
+  left out, with a minimum confidence (defaults 0.35, 0.85 and 0) and their
+  own tag prefix (e.g. `rating:` gives `rating:general`). The scores are
+  stored, so *Update tags on analysed images* can apply stricter thresholds,
+  fewer categories or new prefixes without tagging again.
+- The vision model is not needed for tagger tags, so a bag can use the
+  tagger alone.
+
+Setting up the local tagger:
+
+```text
+photobag tagger install --download-model     # Python env, ONNX Runtime, the 1.26 GB model, and a test run
+photobag tagger status [--check]             # what is installed; --check starts it and tags a test image
+photobag tagger serve --host 0.0.0.0 --port 8000   # run it for other computers
+photobag tagger script <dir>                 # write the server script, requirements and README to host elsewhere
+photobag tagger uninstall
+```
+
+`install` finds Python 3.10 or later (python.org builds are preferred:
+Anaconda's older C++ runtime crashes ONNX Runtime on Windows), creates a
+virtual environment in `%LOCALAPPDATA%\PhotoBag\tagger` (Windows) or
+`~/.local/share/photobag/tagger` (Linux; `PHOTOBAG_TAGGER_DIR` or `--dir`
+elsewhere), and installs `onnxruntime-gpu` with CUDA and cuDNN from pip when
+`nvidia-smi` finds an NVIDIA GPU (about 1.3 GB; `--system-cuda` uses installed
+ones), otherwise `onnxruntime` for the CPU (`--device` chooses). Downloads
+resume and are checked against Hugging Face's checksums. Without
+`--download-model` it asks, or you can put `model.onnx` and
+`selected_tags.csv` from the model's page into the folder yourself;
+`--model SmilingWolf/wd-vit-tagger-v3` picks a smaller WD v3 model. Running
+`install` again repairs or updates the installation.
+
+The server is `internal/tagger/python/tagger_server.py` (FastAPI, `/health`,
+`/tag` and `/tag/details`). Environment variables: `MODEL_PATH`,
+`TAGS_PATH`, `MODEL_NAME`, `DEVICE` (`cuda`, `cpu` or `auto`), `GPU_DEVICE`,
+`MAX_CONCURRENCY`, `ORT_PRELOAD_DLLS`.
+
 ### Export and backup
 
 - **Export:**
@@ -185,7 +233,8 @@ photobag export  <bag> <folder> [--tag T]... [--any-tag T]... [--not-tag T]... [
                                 [--keep-structure] [--overwrite | --skip-existing] [--manifest]
 photobag dedup   <bag> [--mode similar|exact] [--neighbors 8] [--threshold 0.9] [--apply] [selection flags]
 photobag analyze <bag> -p caption,ocr,danbooru,category [--mode missing|changed|all] [--endpoint URL] [--model M]
-                       [--concurrency N] [--dry-run] [selection flags]
+                       [--concurrency N] [--tagger local|host:port] [--dry-run] [selection flags]
+photobag tagger  install [--download-model] [--device auto|cuda|cpu] [--model REPO] | status | serve | script | uninstall
 photobag backup  <bag> <file-or-folder>
 photobag compact <bag>
 photobag info    <bag> [--json]
@@ -197,7 +246,7 @@ Global: --journal auto|wal|delete   --no-migration-backup   -v
 proposed duplicates, and they can still be restored.
 
 `analyze` uses the bag's analysis settings (set them in the UI); the flags
-override the endpoint, model and concurrency for one run.
+override the endpoint, model, concurrency and tagger for one run.
 
 ## The bag file
 
@@ -256,6 +305,7 @@ WebP, TIFF, BMP and GIF files, and junk files.
 | `internal/similar`, `internal/dedup` | k-nearest-neighbour search, similarity ordering, duplicate clusters and resolution |
 | `internal/scoring` | runs, the Feistel pair scheduler and the Bradley–Terry fit |
 | `internal/llm`, `internal/analysis` | OpenAI-compatible client (retries, parameter fallbacks, fake server for tests); pipelines, prompts, reply parsing, analysis jobs |
+| `internal/tagger` | WD tagger client, the embedded Python server, its installer (Python discovery, venv, pip, Hugging Face downloads) and the on-demand local process |
 | `internal/jobs`, `internal/events`, `internal/server` | background jobs, SSE, HTTP API, security |
 | `internal/webui` | embedded build of `web/` |
 | `web/` | React + TypeScript + Mantine SPA; `src/api/gen` is generated by [tygo](https://github.com/gzuidhof/tygo) from the Go types |

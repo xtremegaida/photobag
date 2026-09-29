@@ -95,29 +95,33 @@ func (s *Server) putAnalysisSettings(w http.ResponseWriter, r *http.Request) err
 	return ok(w, v)
 }
 
-// resolve returns the settings and API client for a request: unsaved
-// values from the request, or the stored ones.
-func (s *Server) resolve(ctx context.Context, req connectionRequest) (analysis.Settings, *llm.Client, error) {
+// resolve returns the settings and API key for a request: unsaved values
+// from the request, or the stored ones.
+func (s *Server) resolve(ctx context.Context, req connectionRequest) (analysis.Settings, string, error) {
 	var set analysis.Settings
 	if req.Settings != nil {
 		set = req.Settings.Normalized()
 		if err := set.Validate(); err != nil {
-			return set, nil, badRequest(err)
+			return set, "", badRequest(err)
 		}
 	} else {
 		var err error
 		if set, err = analysis.Load(ctx, s.b); err != nil {
-			return set, nil, err
+			return set, "", err
 		}
 	}
-	var key string
 	if req.APIKey != nil {
-		key = strings.TrimSpace(*req.APIKey)
-	} else {
-		var err error
-		if key, _, err = s.keys.Key(set.Endpoint); err != nil {
-			return set, nil, err
-		}
+		return set, strings.TrimSpace(*req.APIKey), nil
+	}
+	key, _, err := s.keys.Key(set.Endpoint)
+	return set, key, err
+}
+
+// modelClient returns the vision model client for a request.
+func (s *Server) modelClient(ctx context.Context, req connectionRequest) (analysis.Settings, *llm.Client, error) {
+	set, key, err := s.resolve(ctx, req)
+	if err != nil {
+		return set, nil, err
 	}
 	client, err := set.Client(key)
 	if err != nil {
@@ -126,12 +130,25 @@ func (s *Server) resolve(ctx context.Context, req connectionRequest) (analysis.S
 	return set, client, nil
 }
 
+// clients returns what pipelines need for a request.
+func (s *Server) clients(ctx context.Context, req connectionRequest, pipelines []string) (analysis.Settings, analysis.Clients, error) {
+	set, key, err := s.resolve(ctx, req)
+	if err != nil {
+		return set, analysis.Clients{}, err
+	}
+	c, err := set.Clients(key, s.tagger, pipelines)
+	if err != nil {
+		return set, c, badRequest(err)
+	}
+	return set, c, nil
+}
+
 func (s *Server) analysisModels(w http.ResponseWriter, r *http.Request) error {
 	var req connectionRequest
 	if err := readJSON(r, &req); err != nil {
 		return err
 	}
-	_, client, err := s.resolve(r.Context(), req)
+	_, client, err := s.modelClient(r.Context(), req)
 	if err != nil {
 		return err
 	}
@@ -149,11 +166,40 @@ func (s *Server) checkAnalysis(w http.ResponseWriter, r *http.Request) error {
 	if err := readJSON(r, &req); err != nil {
 		return err
 	}
-	set, client, err := s.resolve(r.Context(), req)
+	set, client, err := s.modelClient(r.Context(), req)
 	if err != nil {
 		return err
 	}
 	return ok(w, analysis.Check(r.Context(), set, client))
+}
+
+// taggerStatus reports the local tagger installation and process.
+func (s *Server) taggerStatus(w http.ResponseWriter, r *http.Request) error {
+	return ok(w, s.tagger.Status())
+}
+
+// checkTagger checks the tagger the (unsaved) settings choose, starting
+// the local one if needed.
+func (s *Server) checkTagger(w http.ResponseWriter, r *http.Request) error {
+	var req connectionRequest
+	if err := readJSON(r, &req); err != nil {
+		return err
+	}
+	set, _, err := s.resolve(r.Context(), req)
+	if err != nil {
+		return err
+	}
+	t, err := set.TaggerClient(s.tagger)
+	if err != nil {
+		return badRequest(err)
+	}
+	return ok(w, analysis.CheckTagger(r.Context(), t))
+}
+
+// stopTagger stops the local tagger, freeing its memory.
+func (s *Server) stopTagger(w http.ResponseWriter, r *http.Request) error {
+	s.tagger.Stop()
+	return ok(w, s.tagger.Status())
 }
 
 func (s *Server) analysisStats(w http.ResponseWriter, r *http.Request) error {
@@ -188,7 +234,7 @@ func (s *Server) startAnalysis(w http.ResponseWriter, r *http.Request) error {
 	if err := opts.Validate(); err != nil {
 		return badRequest(err)
 	}
-	set, client, err := s.resolve(r.Context(), connectionRequest{})
+	set, clients, err := s.clients(r.Context(), connectionRequest{}, opts.Pipelines)
 	if err != nil {
 		return err
 	}
@@ -208,7 +254,7 @@ func (s *Server) startAnalysis(w http.ResponseWriter, r *http.Request) error {
 		}
 		var lastEmit time.Time
 		stored := 0
-		rep, err := analysis.Run(ctx, s.b, set, client, plan, opts, func(p analysis.Progress) {
+		rep, err := analysis.Run(ctx, s.b, set, clients, plan, opts, func(p analysis.Progress) {
 			report(p, p.Current)
 			if p.Stored > stored && time.Since(lastEmit) > 2*time.Second {
 				stored, lastEmit = p.Stored, time.Now()
@@ -235,7 +281,7 @@ func (s *Server) tryAnalysis(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx := r.Context()
-	set, client, err := s.resolve(ctx, req.connectionRequest)
+	set, clients, err := s.clients(ctx, req.connectionRequest, req.Pipelines)
 	if err != nil {
 		return err
 	}
@@ -250,7 +296,7 @@ func (s *Server) tryAnalysis(w http.ResponseWriter, r *http.Request) error {
 		}
 		id = ids[0]
 	}
-	out, err := analysis.RunOne(ctx, s.b, set, client, id, req.Pipelines, false)
+	out, err := analysis.RunOne(ctx, s.b, set, clients, id, req.Pipelines, false)
 	if err != nil && out == nil {
 		return badRequest(err)
 	}
@@ -268,11 +314,11 @@ func (s *Server) analyzeImage(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx := r.Context()
-	set, client, err := s.resolve(ctx, connectionRequest{})
+	set, clients, err := s.clients(ctx, connectionRequest{}, req.Pipelines)
 	if err != nil {
 		return err
 	}
-	out, err := analysis.RunOne(ctx, s.b, set, client, id, req.Pipelines, true)
+	out, err := analysis.RunOne(ctx, s.b, set, clients, id, req.Pipelines, true)
 	s.events.Changed("analysis", "tags")
 	if err != nil && out == nil {
 		if err == library.ErrNotFound {

@@ -126,6 +126,14 @@ func (s Settings) Prompt(pipeline string, existing []string) string {
 // pipeline's results, so jobs can re-run results made differently.
 func (s Settings) ConfigHash(pipeline string) string {
 	h := sha256.New()
+	if s.UsesTagger(pipeline) {
+		// The model's settings do not matter; the tagger's model is not
+		// known in advance, so switching servers does not redo results.
+		t := s.Danbooru.Tagger
+		fmt.Fprintf(h, "%s\x00tagger\x00%v %v %v %v %v %v %d", pipeline, t.General.Include, t.General.Threshold,
+			t.Character.Include, t.Character.Threshold, t.Rating.Include, t.Rating.Threshold, s.Danbooru.MaxTags)
+		return hex.EncodeToString(h.Sum(nil))[:16]
+	}
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%d\x00", pipeline, s.Model, s.system(), s.template(pipeline), s.ImageSize)
 	switch pipeline {
 	case library.PipelineDanbooru:

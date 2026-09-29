@@ -135,20 +135,6 @@ func normTag(t string) string {
 	return strings.Trim(t, "_")
 }
 
-// danbooruTagNames turns Danbooru tags into PhotoBag tag names.
-func (s Settings) danbooruTagNames(tags []string) []string {
-	out := make([]string, 0, len(tags))
-	for _, t := range tags {
-		if s.Danbooru.Spaces {
-			t = strings.TrimSpace(strings.ReplaceAll(t, "_", " "))
-		}
-		if name := s.Danbooru.Prefix + t; bag.ValidateLabel(name) == nil {
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
 // categoryTagNames returns the tags for a category: the main category,
 // plus "Main / Sub" with two levels.
 func (s Settings) categoryTagNames(main, sub string) []string {

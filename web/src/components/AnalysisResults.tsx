@@ -5,10 +5,11 @@ import { IconPencil, IconSparkles, IconX } from "@tabler/icons-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { errorMessage } from "../api/client";
-import { useAnalysisSettings, useAnalyzeImage, useDeleteAnalysis, useEditAnalysis } from "../api/hooks";
+import { useAnalysisSettings, useAnalyzeImage, useDeleteAnalysis, useEditAnalysis, useTaggerStatus } from "../api/hooks";
 import type { Analysis } from "../api/types";
 import { formatDate } from "../lib/format";
-import { PIPELINES, pipelineInfo } from "../lib/pipelines";
+import { notReady, PIPELINES, pipelineInfo } from "../lib/pipelines";
+import { DanbooruTags } from "./DanbooruTags";
 
 const stop = (e: React.KeyboardEvent) => e.stopPropagation(); // keep lightbox shortcuts out of text fields
 
@@ -118,21 +119,13 @@ function Result({ id, a }: { id: number; a: Analysis }) {
         </Group>
       </Group>
       {a.pipeline === "danbooru" ? (
-        <Group gap={4}>
-          {(a.tags ?? []).map((t) => (
-            <Badge
-              key={t}
-              component={Link}
-              to={`/?text=${encodeURIComponent(`"${t}"`)}`}
-              variant="light"
-              color="gray"
-              tt="none"
-              style={{ cursor: "pointer" }}
-            >
-              {t}
-            </Badge>
-          ))}
-        </Group>
+        a.tags?.length || a.rating ? (
+          <DanbooruTags tags={a.tags} characters={a.characters} rating={a.rating} ratingScore={a.ratingScore} scores={a.scores} link />
+        ) : (
+          <Text size="sm" c="dimmed" fs="italic">
+            No tags
+          </Text>
+        )
       ) : a.pipeline === "category" ? (
         <Group gap={4}>
           <Badge component={Link} to={`/?text=${encodeURIComponent(`"${a.text}"`)}`} variant="light" tt="none" style={{ cursor: "pointer" }}>
@@ -149,13 +142,17 @@ function Result({ id, a }: { id: number; a: Analysis }) {
 /** An image's analysis results, with editing and "analyse now". */
 export function AnalysisResults({ id, analyses }: { id: number; analyses: Analysis[] }) {
   const { data: view } = useAnalysisSettings();
+  const { data: tagger } = useTaggerStatus();
   const analyze = useAnalyzeImage();
   const [chosen, setChosen] = useLocalStorage<string[]>({ key: "pb-analyse-one", defaultValue: ["caption", "ocr"] });
-  const configured = !!view?.settings.endpoint;
+  const blocked = (p: string) => (view ? notReady(view.settings, p, tagger) : "");
+  const available = PIPELINES.filter((p) => !blocked(p.id));
+  const configured = available.length > 0;
+  const runnable = chosen.filter((p) => !blocked(p));
   if (!configured && analyses.length === 0) return null;
   const run = () =>
     analyze.mutate(
-      { id, pipelines: chosen },
+      { id, pipelines: runnable },
       {
         onSuccess: (r) => {
           const failed = r.outcomes.filter((o) => o.error);
@@ -189,7 +186,9 @@ export function AnalysisResults({ id, analyses }: { id: number; analyses: Analys
                     key={p.id}
                     size="xs"
                     label={p.label}
-                    checked={chosen.includes(p.id)}
+                    disabled={!!blocked(p.id)}
+                    title={blocked(p.id) || undefined}
+                    checked={chosen.includes(p.id) && !blocked(p.id)}
                     onChange={(e) =>
                       setChosen((c) =>
                         e.currentTarget.checked ? PIPELINES.map((x) => x.id).filter((x) => x === p.id || c.includes(x)) : c.filter((x) => x !== p.id),
@@ -200,14 +199,14 @@ export function AnalysisResults({ id, analyses }: { id: number; analyses: Analys
                 <Menu.Item
                   component="button"
                   onClick={run}
-                  disabled={!chosen.length || analyze.isPending}
+                  disabled={!runnable.length || analyze.isPending}
                   leftSection={<IconSparkles size={14} />}
                   color="teal"
                 >
                   Run now
-                  {analyses.some((a) => chosen.includes(a.pipeline) && a.edited)
+                  {analyses.some((a) => runnable.includes(a.pipeline) && a.edited)
                     ? " (replaces results, including your corrections)"
-                    : analyses.some((a) => chosen.includes(a.pipeline))
+                    : analyses.some((a) => runnable.includes(a.pipeline))
                       ? " (replaces results)"
                       : ""}
                 </Menu.Item>

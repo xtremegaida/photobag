@@ -10,12 +10,13 @@ import (
 
 	"photobag/internal/analysis"
 	"photobag/internal/library"
+	"photobag/internal/tagger"
 )
 
 func analyzeCmd(g *globals) *cobra.Command {
 	var q queryFlags
 	var opts analysis.Options
-	var endpoint, model string
+	var endpoint, model, taggerFlag string
 	var concurrency int
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -27,19 +28,25 @@ store the results in the bag:
 
   caption   a short description for people who cannot see the image
   ocr       the text found in the image (empty when there is none)
-  danbooru  Danbooru-style tags (optionally also added as PhotoBag tags)
+  danbooru  Danbooru tags, from the model or a WD tagger (optionally also
+            added as PhotoBag tags)
   category  a category, or a main and a sub category, added as tags
 
 The endpoint, model, prompts and pipeline options are the bag's analysis
-settings (set them in the UI under Analysis); --endpoint, --model and
---concurrency override them for this run only. The API key comes from the
-` + analysis.KeyEnv + ` environment variable or the key saved in the UI.
+settings (set them in the UI under Analysis); --endpoint, --model,
+--concurrency and --tagger override them for this run only. The API key
+comes from the ` + analysis.KeyEnv + ` environment variable or the key saved in the UI.
+
+Danbooru tags come from a WD tagger when the settings say so, or with
+--tagger local (the tagger installed with "photobag tagger install") or
+--tagger host:port (a tagger server).
 
 By default only images without a result are sent (--mode missing). Use
 --mode changed to also redo results made with another model or prompt, or
 --mode all to redo everything. Results edited by hand are always kept.`,
 		Example: `  photobag analyze photos.photobag --pipeline caption --pipeline ocr
-  photobag analyze photos.photobag --pipeline category --tag Holiday --dry-run`,
+  photobag analyze photos.photobag --pipeline category --tag Holiday --dry-run
+  photobag analyze photos.photobag --pipeline danbooru --tagger local`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Query = q.query()
@@ -66,6 +73,13 @@ By default only images without a result are sent (--mode missing). Use
 			if concurrency > 0 {
 				set.Concurrency = concurrency
 			}
+			switch taggerFlag {
+			case "":
+			case "local":
+				set.Danbooru.Source, set.Danbooru.Tagger.Local = analysis.DanbooruFromTagger, true
+			default:
+				set.Danbooru.Source, set.Danbooru.Tagger.Local, set.Danbooru.Tagger.Endpoint = analysis.DanbooruFromTagger, false, taggerFlag
+			}
 			set = set.Normalized()
 			if err := set.Validate(); err != nil {
 				return err
@@ -91,20 +105,39 @@ By default only images without a result are sent (--mode missing). Use
 			if err != nil {
 				return err
 			}
-			client, err := set.Client(key)
+			local := &tagger.Local{Dir: tagger.DefaultDir()}
+			defer local.Close()
+			clients, err := set.Clients(key, local, opts.Pipelines)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "Using %s at %s, %d at a time.\n", orDefault(set.Model, "the default model"), set.Endpoint, set.Concurrency)
+			if clients.Model != nil {
+				fmt.Fprintf(os.Stderr, "Using %s at %s, %d at a time.\n", orDefault(set.Model, "the default model"), set.Endpoint, set.Concurrency)
+			}
+			switch {
+			case clients.Tagger == nil:
+			case set.Danbooru.Tagger.Local:
+				fmt.Fprintf(os.Stderr, "Danbooru tags from the local tagger (%s, in %s).\n", local.Name(), local.Dir)
+			default:
+				fmt.Fprintf(os.Stderr, "Danbooru tags from the tagger at %s.\n", set.Danbooru.Tagger.Endpoint)
+			}
 			st := newStatus()
 			start := time.Now()
-			rep, err := analysis.Run(ctx, b, set, client, plan, opts, func(p analysis.Progress) {
+			rep, err := analysis.Run(ctx, b, set, clients, plan, opts, func(p analysis.Progress) {
 				eta := ""
 				if p.Done > 0 && p.Done < p.Total {
 					left := time.Duration(float64(time.Since(start)) / float64(p.Done) * float64(p.Total-p.Done))
 					eta = " · " + left.Round(time.Second).String() + " left"
 				}
-				st.update(p.Done == p.Total, "Analysing %d/%d · %d failed%s · %s", p.Done, p.Total, p.Failed, eta, p.Current)
+				if p.Done == 0 && p.Current != "" {
+					st.update(false, "%s", p.Current)
+					return
+				}
+				current := ""
+				if p.Current != "" {
+					current = " · " + p.Current
+				}
+				st.update(p.Done == p.Total, "Analysing %d/%d · %d failed%s%s", p.Done, p.Total, p.Failed, eta, current)
 			})
 			st.done()
 			if rep != nil {
@@ -115,9 +148,12 @@ By default only images without a result are sent (--mode missing). Use
 					}
 					fmt.Fprintf(os.Stderr, "  failed: #%d %s (%s): %s\n", f.ImageID, f.Name, f.Pipeline, f.Error)
 				}
-				fmt.Printf("Stored %d result(s), %d failed, %d skipped in %s (%d prompt + %d reply tokens).\n",
-					rep.Stored, rep.Failed, rep.Skipped, (time.Duration(rep.Millis) * time.Millisecond).Round(time.Second),
-					rep.PromptTokens, rep.CompletionTokens)
+				tokens := ""
+				if rep.PromptTokens+rep.CompletionTokens > 0 {
+					tokens = fmt.Sprintf(" (%d prompt + %d reply tokens)", rep.PromptTokens, rep.CompletionTokens)
+				}
+				fmt.Printf("Stored %d result(s), %d failed, %d skipped in %s%s.\n",
+					rep.Stored, rep.Failed, rep.Skipped, (time.Duration(rep.Millis) * time.Millisecond).Round(time.Second), tokens)
 			}
 			return err
 		},
@@ -128,6 +164,7 @@ By default only images without a result are sent (--mode missing). Use
 	cmd.Flags().StringVar(&endpoint, "endpoint", "", "API base URL, e.g. http://127.0.0.1:1234/v1 (overrides the bag's setting)")
 	cmd.Flags().StringVar(&model, "model", "", "model name (overrides the bag's setting)")
 	cmd.Flags().IntVar(&concurrency, "concurrency", 0, "requests at a time (overrides the bag's setting)")
+	cmd.Flags().StringVar(&taggerFlag, "tagger", "", `Danbooru tags from a WD tagger: "local" or host:port (overrides the bag's setting)`)
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "only report how many requests are needed")
 	return cmd
 }
