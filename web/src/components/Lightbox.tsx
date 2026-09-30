@@ -1,6 +1,6 @@
-import { ActionIcon, Modal, ScrollArea } from "@mantine/core";
+import { ActionIcon, Modal, ScrollArea, Tooltip } from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
-import { IconChevronLeft, IconChevronRight, IconX } from "@tabler/icons-react";
+import { IconChevronLeft, IconChevronRight, IconPlayerPlay, IconX } from "@tabler/icons-react";
 import { useEffect } from "react";
 import { preload, previewUrl } from "../api/client";
 import { useImage } from "../api/hooks";
@@ -12,12 +12,14 @@ interface LightboxProps {
   index: number | null;
   onIndex: (i: number) => void;
   onClose: () => void;
+  /** Starts a slideshow from an image. */
+  onPlay?: (index: number) => void;
 }
 
 const SIZE = window.devicePixelRatio > 1.5 || window.innerWidth > 1800 ? 2560 : 1600;
 
 /** Full-screen viewer with metadata panel; ←/→ to browse, Esc to close. */
-export function Lightbox({ ids, index, onIndex, onClose }: LightboxProps) {
+export function Lightbox({ ids, index, onIndex, onClose, onPlay }: LightboxProps) {
   const open = index !== null && index >= 0 && index < ids.length;
   const id = open ? ids[index!] : undefined;
   const { data: im } = useImage(id);
@@ -52,6 +54,13 @@ export function Lightbox({ ids, index, onIndex, onClose }: LightboxProps) {
               {index! + 1} / {ids.length}
             </span>
             <div className={classes.top}>
+              {onPlay && (
+                <Tooltip label="Slideshow from here">
+                  <ActionIcon variant="filled" color="dark" size="lg" onClick={() => onPlay(index!)} aria-label="Slideshow from here">
+                    <IconPlayerPlay size={18} />
+                  </ActionIcon>
+                </Tooltip>
+              )}
               <ActionIcon variant="filled" color="dark" size="lg" onClick={onClose} aria-label="Close">
                 <IconX size={18} />
               </ActionIcon>

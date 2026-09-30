@@ -1,0 +1,170 @@
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  color: #fff;
+  transition: background-color 200ms ease;
+}
+
+.fill {
+  position: absolute;
+  inset: 0;
+}
+
+/* Each slide fades in over the one before, which fades out. */
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity var(--fade) ease-in-out;
+}
+
+@starting-style {
+  .slide {
+    opacity: 0;
+  }
+}
+
+.slide[data-leaving] {
+  opacity: 0;
+  /* Stay mostly visible until the new slide is mostly in, so the
+     background does not show through half-way. */
+  transition-timing-function: cubic-bezier(0.6, 0, 1, 1);
+}
+
+.slide img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.slide img[data-fit="cover"] {
+  object-fit: cover;
+}
+
+.slide img[data-fit="stretch"] {
+  object-fit: fill;
+}
+
+.slide img[data-fit="center"] {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 48px 10% 28px;
+  text-align: center;
+  font-size: clamp(14px, 1.6vw, 26px);
+  line-height: 1.35;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+
+.chrome[data-visible] {
+  opacity: 1;
+}
+
+.chrome[data-visible] > .top,
+.chrome[data-visible] > .bottom {
+  pointer-events: auto;
+}
+
+.top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 36px;
+  background: linear-gradient(rgba(0, 0, 0, 0.6), transparent);
+}
+
+.title {
+  min-width: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.buttons {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 40px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+}
+
+.bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.progress {
+  height: 100%;
+  background: rgba(255, 255, 255, 0.75);
+  transform-origin: left;
+  animation-name: grow;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.status {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}

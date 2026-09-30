@@ -50,9 +50,10 @@ export const qk = {
 
 /** Maps server "changed" topics to the query keys they invalidate. */
 const topicKeys: Record<string, string[]> = {
-  images: ["ids", "count", "image", "detail", "stats", "rankings"],
+  images: ["ids", "count", "image", "detail", "stats", "rankings", "decks", "deck"],
   tags: ["tags", "image", "detail", "ids", "count"],
-  trash: ["ids", "count", "stats", "image", "detail"],
+  trash: ["ids", "count", "stats", "image", "detail", "decks", "deck"],
+  decks: ["decks", "deck", "detail"],
   metrics: ["metrics", "rankings", "detail", "ids"],
   runs: ["runs", "run", "metrics"],
   dedup: ["scans", "scan"],
@@ -82,11 +83,12 @@ export function useTags() {
   return useQuery({ queryKey: qk.tags, queryFn: () => api.get<Tag[]>("/api/tags"), staleTime: 10_000 });
 }
 
-export function useImageIds(query: ImageQuery, sort: Sort) {
+export function useImageIds(query: ImageQuery, sort: Sort, enabled = true) {
   return useQuery({
     queryKey: qk.ids(query, sort),
     queryFn: () => api.post<{ ids: number[]; total: number }>("/api/images/ids", { query, sort }),
     placeholderData: keepPreviousData,
+    enabled,
   });
 }
 
@@ -113,6 +115,11 @@ export function useImage(id: number | undefined) {
     enabled: id !== undefined && id > 0,
     staleTime: 30_000,
   });
+}
+
+/** Loads (or reuses) an image's metadata outside a component. */
+export function fetchImage(qc: QueryClient, id: number) {
+  return qc.fetchQuery({ queryKey: qk.image(id), queryFn: () => imageBatcher.load(id), staleTime: 30_000 });
 }
 
 export function useImageDetail(id: number | undefined) {

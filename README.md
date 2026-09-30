@@ -22,6 +22,8 @@ existing, and can:
 - **export** to a folder,
 - **back up** the bag,
 - find **duplicates**, bit-identical or visually similar,
+- play **slideshows** of the library or of **slide decks** (images in an
+  order you choose),
 - **analyse** images with a vision model behind any OpenAI-compatible API,
 - **generate** images with ComfyUI: run workflows with overrides, sweep
   settings to compare them, and keep the images that work.
@@ -52,11 +54,52 @@ pages.
   ("Find similar").
 - **Select:** click, Ctrl/⌘-click, Shift-click ranges, Ctrl+A, or "select all
   matching".
-- **Bulk actions:** tag, untag, export, score, and move to the trash.
+- **Bulk actions:** tag, untag, add to a slide deck, play as a slideshow,
+  export, score, and move to the trash.
 - **Lightbox:** ← and → to browse, inline rename, a tag editor that picks
   existing tags or creates new ones, metadata, and per-metric scores.
 - **Tags page:** rename a tag, merge by renaming onto an existing tag, or
   delete one.
+
+### Slide decks and slideshows
+
+- **Slideshows:** **Slideshow** in the library plays the images shown, with
+  the current filters and sort. The arrow beside it holds the settings,
+  which are kept in the browser. The lightbox's ▷ starts from the image
+  shown, and the selection bar plays just the selected images.
+- **Slide decks** (in the sidebar) are images in an order you choose, with
+  their own slideshow settings.
+  - **Adding images:** select images in the library and use **Add to deck**
+    (or start a new deck with them). On the deck's page, **Add images**
+    takes everything with some tags or name, or the library selection, in
+    date, name or shuffled order.
+  - **Ordering:** drag slides, or a selection of them, to where they
+    should go. Selected slides can also move to the start or the end.
+    **Sort** reorders the whole deck by date, name, visual similarity
+    (look-alikes next to each other), score, or at random, and can be
+    undone.
+  - Images in the trash are hidden from decks, and return to their place if
+    restored. A duplicate merged into its keeper is replaced by the keeper.
+- **Settings:**
+  - advance automatically (seconds per slide) or by hand;
+  - cross-fade on or off, and how long it takes;
+  - **Fit** (whole image, as large as fits), **Fill** (crops), **Stretch**
+    (distorts) or **Actual size** (larger images shrink to fit);
+  - background colour, shuffle, loop, and captions (the image's description,
+    or its name).
+
+  A small preview shows the result.
+- **Playing:** the slideshow fills the screen.
+  - → or Space shows the next slide (in timed shows, Space pauses), ← the
+    previous one, Home and End the first and last. Presentation clickers
+    (Page Up/Down) work too.
+  - F switches full screen, C switches captions, and Esc ends the show.
+  - A click moves on (the left quarter goes back); on touch screens, swipe.
+  - The controls and the pointer hide while the mouse is still. The screen
+    is kept awake where the browser allows it.
+  - GIFs, PNGs and WebPs are shown as they are, so they animate and
+    transparent parts show the background. Other images use a preview sized
+    for the screen, prepared ahead of time.
 
 ### Import
 
@@ -361,6 +404,7 @@ WebP, TIFF, BMP and GIF files, and junk files.
 | `internal/llm`, `internal/analysis` | OpenAI-compatible client (retries, parameter fallbacks, fake server for tests); pipelines, prompts, reply parsing, analysis jobs |
 | `internal/comfy` | ComfyUI API-format workflows (titles, overrides, canonical JSON), sweep and seed expansion, HTTP and websocket client, prompt runner, PNG prompt chunks, fake server for tests |
 | `internal/experiments` | workflow templates and versions, experiments, generation jobs, moving images to the library |
+| `internal/decks` | slide decks: membership, order and moves, slideshow settings |
 | `internal/tagger` | WD tagger client, the embedded Python server, its installer (Python discovery, venv, pip, Hugging Face downloads) and the on-demand local process |
 | `internal/jobs`, `internal/events`, `internal/server` | background jobs, SSE, HTTP API, security |
 | `internal/webui` | embedded build of `web/` |

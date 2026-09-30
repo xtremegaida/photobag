@@ -1,14 +1,16 @@
-import { ActionIcon, Anchor, Badge, Button, Group, Stack, Table, Text, TextInput, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, Anchor, Badge, Button, CloseButton, Group, Stack, Table, Text, TextInput, Title, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconDownload, IconExternalLink, IconPhotoSearch, IconRestore, IconTrash } from "@tabler/icons-react";
+import { IconDownload, IconExternalLink, IconPhotoSearch, IconPlus, IconRestore, IconTrash } from "@tabler/icons-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { errorMessage, originalUrl } from "../api/client";
-import { useImageDetail, useRename, useRestore, useTrash } from "../api/hooks";
-import type { Image } from "../api/types";
+import { api, errorMessage, originalUrl } from "../api/client";
+import { invalidateTopics, useImageDetail, useRename, useRestore, useTrash } from "../api/hooks";
+import type { DeckRef, Image } from "../api/types";
 import { formatBytes, formatDate, formatScore, formatTaken } from "../lib/format";
 import { AnalysisResults } from "./AnalysisResults";
 import { GenerationInfo } from "./generate/GenerationInfo";
+import { AddToDeck } from "./slideshow/AddToDeck";
 import { TagEditor } from "./TagEditor";
 
 function NameEditor({ image }: { image: Image }) {
@@ -50,6 +52,47 @@ function NameEditor({ image }: { image: Image }) {
   );
 }
 
+/** The decks an image is in, with a way to add it to more. */
+function ImageDecks({ imageId, decks }: { imageId: number; decks: DeckRef[] }) {
+  const qc = useQueryClient();
+  const takeOut = async (d: DeckRef) => {
+    try {
+      await api.post(`/api/decks/${d.id}/remove`, { ids: [imageId] });
+      invalidateTopics(qc, ["decks"]);
+    } catch (e) {
+      notifications.show({ color: "red", message: errorMessage(e) });
+    }
+  };
+  return (
+    <div>
+      <Text size="sm" fw={500} mb={4}>
+        Slide decks
+      </Text>
+      <Group gap={6}>
+        {decks.map((d) => (
+          <Badge
+            key={d.id}
+            variant="light"
+            color="gray"
+            size="lg"
+            style={{ textTransform: "none", fontWeight: 500 }}
+            rightSection={<CloseButton size="xs" onClick={() => takeOut(d)} aria-label={`Take out of ${d.name}`} />}
+          >
+            <Anchor component={Link} to={`/decks/${d.id}`} size="xs" c="inherit">
+              {d.name}
+            </Anchor>
+          </Badge>
+        ))}
+        <AddToDeck images={{ ids: [imageId] }} count={1}>
+          <Button size="compact-xs" variant="subtle" leftSection={<IconPlus size={14} />}>
+            {decks.length ? "Add" : "Add to a deck"}
+          </Button>
+        </AddToDeck>
+      </Group>
+    </div>
+  );
+}
+
 /** Metadata, name/tag editing, scores and actions for one image. */
 export function ImageInfo({ id, onTrashed }: { id: number; onTrashed?: () => void }) {
   const { data } = useImageDetail(id);
@@ -77,6 +120,7 @@ export function ImageInfo({ id, onTrashed }: { id: number; onTrashed?: () => voi
         </Text>
         <TagEditor imageIds={[im.id]} value={im.tags} />
       </div>
+      {!im.deletedAt && <ImageDecks imageId={im.id} decks={data.decks ?? []} />}
       <AnalysisResults id={im.id} analyses={data.analyses ?? []} />
       {data.generation && <GenerationInfo g={data.generation} />}
       {im.deletedAt ? (

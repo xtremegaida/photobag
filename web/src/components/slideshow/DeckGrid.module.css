@@ -1,0 +1,156 @@
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md) var(--mantine-spacing-md);
+}
+
+.grid {
+  display: grid;
+  gap: 10px;
+}
+
+.tile {
+  position: relative;
+  aspect-ratio: 1;
+  cursor: grab;
+  user-select: none;
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--mantine-radius-sm);
+  overflow: hidden;
+  background: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-6));
+  /* Paint only the slides in view (decks can be long). */
+  content-visibility: auto;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition:
+    outline-color 80ms ease,
+    opacity 80ms ease;
+}
+
+.frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.tile:hover .frame {
+  outline-color: light-dark(var(--mantine-color-gray-5), var(--mantine-color-dark-2));
+}
+
+.tile[data-selected] .frame {
+  outline: 3px solid var(--mantine-color-teal-5);
+  outline-offset: -3px;
+}
+
+.tile[data-dragging] .frame {
+  opacity: 0.35;
+}
+
+/* Where dropped slides will go: a bar in the gap beside the tile. */
+.tile[data-marker]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--mantine-color-teal-5);
+  box-shadow: 0 0 6px var(--mantine-color-teal-5);
+}
+
+.tile[data-marker="before"]::after {
+  left: -7px;
+}
+
+.tile[data-marker="after"]::after {
+  right: -7px;
+}
+
+.number {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.check {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+
+.tile:hover .check,
+.tile[data-selected] .check,
+.scroller[data-selecting] .check {
+  opacity: 1;
+}
+
+.end {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 8px;
+  font-size: var(--mantine-font-size-sm);
+  color: var(--mantine-color-dimmed);
+  border: 2px dashed var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+}
+
+.end[data-active] {
+  border-color: var(--mantine-color-teal-5);
+  color: var(--mantine-color-teal-5);
+}
+
+.ghost {
+  position: fixed;
+  top: -1000px;
+  left: 0;
+  width: 90px;
+  height: 90px;
+  border-radius: 6px;
+  overflow: visible;
+  background: #222;
+}
+
+.ghost img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  box-shadow: 6px 6px 0 -2px #555;
+}
+
+.ghost span {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 12px;
+  font:
+    600 13px/24px system-ui,
+    sans-serif;
+  text-align: center;
+  color: #fff;
+  background: var(--mantine-color-teal-6);
+}

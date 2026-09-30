@@ -20,6 +20,7 @@ import {
   IconListCheck,
   IconMoon,
   IconPhoto,
+  IconPresentation,
   IconSparkles,
   IconSun,
   IconTags,
@@ -35,6 +36,8 @@ import { formatBytes, plural } from "./lib/format";
 import { AnalysisPage } from "./pages/Analysis";
 import { BackupPage } from "./pages/Backup";
 import { ComparePage } from "./pages/Compare";
+import { DeckPage } from "./pages/Deck";
+import { DecksPage } from "./pages/Decks";
 import { DedupPage } from "./pages/Dedup";
 import { ExperimentPage } from "./pages/Experiment";
 import { ExportPage } from "./pages/Export";
@@ -44,12 +47,14 @@ import { ImportPage } from "./pages/Import";
 import { JobsPage } from "./pages/Jobs";
 import { RankingsPage } from "./pages/Rankings";
 import { ScoringPage } from "./pages/Scoring";
+import { SlideshowPage } from "./pages/Slideshow";
 import { TagsPage } from "./pages/Tags";
 import { useJobStore } from "./stores/jobs";
 
 const nav = [
   { to: "/", label: "Library", icon: IconPhoto, end: true },
   { to: "/tags", label: "Tags", icon: IconTags },
+  { to: "/decks", label: "Slide decks", icon: IconPresentation },
   { to: "/duplicates", label: "Duplicates", icon: IconCopy },
   { to: "/scoring", label: "Scoring", icon: IconChartBar },
   { to: "/analysis", label: "Analysis", icon: IconSparkles },
@@ -71,6 +76,9 @@ export function App() {
   const connected = useJobStore((s) => s.connected);
   const location = useLocation();
   const fullBleed = location.pathname.startsWith("/scoring/runs/");
+
+  // Slideshows take the whole screen, without the app around them.
+  if (location.pathname === "/slideshow") return <SlideshowPage />;
 
   return (
     <AppShell
@@ -148,6 +156,8 @@ export function App() {
             <Route path="/" element={<GalleryPage />} />
             <Route path="/trash" element={<GalleryPage trash />} />
             <Route path="/tags" element={<TagsPage />} />
+            <Route path="/decks" element={<DecksPage />} />
+            <Route path="/decks/:id" element={<DeckPage />} />
             <Route path="/duplicates" element={<DedupPage />} />
             <Route path="/scoring" element={<ScoringPage />} />
             <Route path="/scoring/runs/:id" element={<ComparePage />} />

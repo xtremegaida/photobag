@@ -10,6 +10,8 @@ import type { ImageQuery, Sort } from "../api/types";
 import { BulkBar } from "../components/BulkBar";
 import { GalleryToolbar } from "../components/GalleryToolbar";
 import { Lightbox } from "../components/Lightbox";
+import { LibrarySlideshow } from "../components/slideshow/LibrarySlideshow";
+import { useStartSlideshow } from "../components/slideshow/start";
 import { ThumbGrid } from "../components/ThumbGrid";
 import { plural } from "../lib/format";
 import { galleryParams, hasFilters, parseGallery } from "../lib/query-url";
@@ -101,6 +103,7 @@ export function GalleryPage({ trash = false }: { trash?: boolean }) {
   const extend = useSelection((s) => s.extend);
   const setSel = useSelection((s) => s.set);
   const clear = useSelection((s) => s.clear);
+  const startSlideshow = useStartSlideshow();
 
   useEffect(() => {
     clear();
@@ -140,7 +143,11 @@ export function GalleryPage({ trash = false }: { trash?: boolean }) {
             <ChosenChip ids={state.query.ids} onClear={() => onChange({ ...state.query, ids: undefined }, state.sort)} />
           ) : null}
         </Group>
-        {trash && <EmptyTrashButton count={stats?.trashed ?? 0} />}
+        {trash ? (
+          <EmptyTrashButton count={stats?.trashed ?? 0} />
+        ) : (
+          <LibrarySlideshow count={ids.length} params={galleryParams(state)} firstId={ids[0]} />
+        )}
       </Group>
       <GalleryToolbar
         query={state.query}
@@ -195,7 +202,13 @@ export function GalleryPage({ trash = false }: { trash?: boolean }) {
         />
       )}
       <BulkBar allIds={ids} trash={trash} />
-      <Lightbox ids={ids} index={open} onIndex={setOpen} onClose={() => setOpen(null)} />
+      <Lightbox
+        ids={ids}
+        index={open}
+        onIndex={setOpen}
+        onClose={() => setOpen(null)}
+        onPlay={trash ? undefined : (i) => startSlideshow({ params: galleryParams(state), start: i })}
+      />
     </Stack>
   );
 }

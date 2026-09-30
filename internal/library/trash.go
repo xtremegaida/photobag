@@ -96,6 +96,9 @@ func EmptyTrash(ctx context.Context, b *bag.Bag, ids []int64) (PurgeResult, erro
 		if _, err := tx.ExecContext(ctx, "DELETE FROM analyses WHERE image_id IN (SELECT id FROM temp.purge_ids)"); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM deck_images WHERE image_id IN (SELECT id FROM temp.purge_ids)"); err != nil {
+			return err
+		}
 		if err := tx.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(size), 0) FROM blobs
 			WHERE `+UnusedBlob).Scan(&r.BlobsFreed, &r.BytesFreed); err != nil {
 			return err

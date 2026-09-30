@@ -1,12 +1,25 @@
 import { Button, Group, Paper, Popover, Stack, TagsInput, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconChartBar, IconRestore, IconSparkles, IconTagMinus, IconTagPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import {
+  IconChartBar,
+  IconPlayerPlay,
+  IconPresentation,
+  IconRestore,
+  IconSparkles,
+  IconTagMinus,
+  IconTagPlus,
+  IconTrash,
+  IconUpload,
+  IconX,
+} from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { errorMessage } from "../api/client";
 import { useBulkTags, useRestore, useTrash } from "../api/hooks";
 import { plural } from "../lib/format";
 import { useSelection } from "../stores/selection";
+import { AddToDeck } from "./slideshow/AddToDeck";
+import { useStartSlideshow } from "./slideshow/start";
 import { useTagNames } from "./TagEditor";
 
 function TagAction({ mode, ids }: { mode: "add" | "remove"; ids: number[] }) {
@@ -71,6 +84,14 @@ export function BulkBar({ allIds, trash }: { allIds: number[]; trash?: boolean }
   const trashM = useTrash();
   const restoreM = useRestore();
   const navigate = useNavigate();
+  const startSlideshow = useStartSlideshow();
+  // The selection in gallery order (for decks and slideshows), then any
+  // selected images the filters now hide.
+  const inOrder = useMemo(() => {
+    const shown = allIds.filter((x) => selected.has(x));
+    const listed = new Set(allIds);
+    return [...shown, ...[...selected].filter((x) => !listed.has(x))];
+  }, [allIds, selected]);
   if (ids.length === 0) {
     return null;
   }
@@ -104,6 +125,14 @@ export function BulkBar({ allIds, trash }: { allIds: number[]; trash?: boolean }
             <>
               <TagAction mode="add" ids={ids} />
               <TagAction mode="remove" ids={ids} />
+              <AddToDeck images={{ ids: inOrder }} count={ids.length}>
+                <Button size="xs" variant="light" leftSection={<IconPresentation size={16} />}>
+                  Add to deck
+                </Button>
+              </AddToDeck>
+              <Button size="xs" variant="light" leftSection={<IconPlayerPlay size={16} />} onClick={() => startSlideshow({ ids: inOrder })}>
+                Slideshow
+              </Button>
               <Button size="xs" variant="light" leftSection={<IconUpload size={16} />} onClick={() => navigate("/export?source=selection")}>
                 Export
               </Button>

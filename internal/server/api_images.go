@@ -1,14 +1,17 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"mime"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 
+	"photobag/internal/decks"
 	"photobag/internal/experiments"
 	"photobag/internal/exporter"
 	"photobag/internal/imaging"
@@ -19,6 +22,7 @@ import (
 
 func (s *Server) routes(mux *http.ServeMux) {
 	s.generateRoutes(mux)
+	s.deckRoutes(mux)
 	s.handle(mux, "GET /api/events", s.sse)
 	s.handle(mux, "GET /api/stats", s.getStats)
 
@@ -109,30 +113,37 @@ func (s *Server) listIDs(w http.ResponseWriter, r *http.Request) error {
 	if err := readJSON(r, &req); err != nil {
 		return err
 	}
-	ctx := r.Context()
-	if req.Sort.Field == query.SortScore {
-		if err := s.scoring.RefreshDirty(ctx, req.Sort.MetricID); err != nil {
-			return err
-		}
-	}
-	ids, err := library.ListIDs(ctx, s.b, req.Query, req.Sort)
+	ids, err := s.orderedIDs(r.Context(), req.Query, req.Sort)
 	if err != nil {
-		return badRequest(err)
-	}
-	if req.Sort.Field == query.SortSimilar {
-		if ids, err = s.similarOrder(r, ids, req.Sort.SimilarTo); err != nil {
-			return err
-		}
-		if req.Sort.Desc {
-			for i, j := 0, len(ids)-1; i < j; i, j = i+1, j-1 {
-				ids[i], ids[j] = ids[j], ids[i]
-			}
-		}
+		return err
 	}
 	return ok(w, map[string]any{"ids": ids, "total": len(ids)})
 }
 
-func (s *Server) similarOrder(r *http.Request, ids []int64, target int64) ([]int64, error) {
+// orderedIDs lists the images matching q in the order of so, as the
+// gallery shows them.
+func (s *Server) orderedIDs(ctx context.Context, q query.ImageQuery, so query.Sort) ([]int64, error) {
+	if so.Field == query.SortScore {
+		if err := s.scoring.RefreshDirty(ctx, so.MetricID); err != nil {
+			return nil, err
+		}
+	}
+	ids, err := library.ListIDs(ctx, s.b, q, so)
+	if err != nil {
+		return nil, badRequest(err)
+	}
+	if so.Field == query.SortSimilar {
+		if ids, err = s.similarOrder(ctx, ids, so.SimilarTo); err != nil {
+			return nil, err
+		}
+		if so.Desc {
+			slices.Reverse(ids)
+		}
+	}
+	return ids, nil
+}
+
+func (s *Server) similarOrder(ctx context.Context, ids []int64, target int64) ([]int64, error) {
 	h := sha256.New()
 	binary.Write(h, binary.LittleEndian, target)
 	binary.Write(h, binary.LittleEndian, ids)
@@ -140,7 +151,7 @@ func (s *Server) similarOrder(r *http.Request, ids []int64, target int64) ([]int
 	if v, hit := s.simSort.get(key); hit {
 		return append([]int64{}, v...), nil
 	}
-	out, err := similar.Order(r.Context(), s.b, ids, target)
+	out, err := similar.Order(ctx, s.b, ids, target)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +209,11 @@ func (s *Server) getImage(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := map[string]any{"image": im, "scores": scores, "analyses": as}
+	inDecks, err := decks.ForImage(r.Context(), s.b, id)
+	if err != nil {
+		return err
+	}
+	out := map[string]any{"image": im, "scores": scores, "analyses": as, "decks": inDecks}
 	if g, err := experiments.ForImage(r.Context(), s.b, id); err != nil {
 		return err
 	} else if g != nil {

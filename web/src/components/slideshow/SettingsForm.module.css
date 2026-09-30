@@ -1,0 +1,52 @@
+.preview {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--mantine-radius-sm);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--mantine-color-default-border);
+  transition: background-color 120ms ease;
+}
+
+.preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.preview img[data-fit="cover"] {
+  object-fit: cover;
+}
+
+.preview img[data-fit="stretch"] {
+  object-fit: fill;
+}
+
+.preview img[data-fit="center"] {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.empty {
+  mix-blend-mode: difference;
+  color: #fff;
+}
+
+.caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 8px 4px;
+  font-size: 9px;
+  line-height: 1.3;
+  text-align: center;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

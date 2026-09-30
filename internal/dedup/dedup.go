@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"photobag/internal/bag"
+	"photobag/internal/decks"
 	"photobag/internal/imaging"
 	"photobag/internal/library"
 	"photobag/internal/query"
@@ -428,6 +429,9 @@ func Resolve(ctx context.Context, b *bag.Bag, res []Resolution) (int, error) {
 				trashed += int(n)
 				if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO image_tags(image_id, tag_id, source)
 					SELECT ?, tag_id, source FROM image_tags WHERE image_id = ?`, r.Keep, d); err != nil {
+					return err
+				}
+				if err := decks.Merge(ctx, tx, d, r.Keep); err != nil {
 					return err
 				}
 			}

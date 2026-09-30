@@ -7,7 +7,7 @@ import type { BackupDownload, Job } from "./types";
 
 const finishedTopics: Record<string, string[]> = {
   import: ["images", "tags"],
-  "empty-trash": ["images", "trash", "tags", "metrics"],
+  "empty-trash": ["images", "trash", "tags", "metrics", "decks"],
   compact: ["images"],
   backup: ["images"],
   "dedup-scan": ["dedup"],

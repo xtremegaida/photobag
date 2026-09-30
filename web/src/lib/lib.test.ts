@@ -6,6 +6,18 @@ import { defaultSweep, gridLayout, isSeedName, rangeValues, requestFrom, valueCo
 import { eta, formatDuration, formatMillis, notReady, usesTagger } from "./pipelines";
 import { galleryParams, hasFilters, parseGallery } from "./query-url";
 import { rangeBetween, toggled } from "./selection";
+import {
+  DEFAULT_SETTINGS,
+  describeSettings,
+  fadeMillis,
+  moveIds,
+  playOrder,
+  reshuffle,
+  slideSource,
+  slideshowPath,
+  validSettings,
+  withDefaults,
+} from "./slideshow";
 
 describe("selection", () => {
   const order = [10, 20, 30, 40, 50];
@@ -226,5 +238,52 @@ describe("gallery URL ids", () => {
     expect(st.query.ids).toEqual([173, 174]);
     expect(hasFilters(st.query)).toBe(true);
     expect(galleryParams(st).getAll("id")).toEqual(["173", "174"]);
+  });
+});
+
+describe("slide decks", () => {
+  const order = [1, 2, 3, 4, 5, 6];
+  it("moves slides like the server", () => {
+    expect(moveIds(order, [5], 2)).toEqual([1, 5, 2, 3, 4, 6]);
+    expect(moveIds(order, [5, 2], 1)).toEqual([2, 5, 1, 3, 4, 6]);
+    expect(moveIds(order, [1, 2], 0)).toEqual([3, 4, 5, 6, 1, 2]);
+    expect(moveIds(order, [2, 3], 3)).toEqual(order);
+    expect(moveIds(order, [1, 4], 3)).toEqual([2, 1, 4, 3, 5, 6]);
+    expect(moveIds(order, [3, 99], 99)).toEqual([1, 2, 4, 5, 6, 3]);
+  });
+  it("orders plays", () => {
+    const seq = [0.9, 0.1, 0.5, 0.3, 0.7];
+    let i = 0;
+    const random = () => seq[i++ % seq.length];
+    expect(playOrder(5, 2, false)).toEqual([0, 1, 2, 3, 4]);
+    const p = playOrder(5, 2, true, random);
+    expect(p[0]).toBe(2);
+    expect([...p].sort()).toEqual([0, 1, 2, 3, 4]);
+    for (let k = 0; k < 20; k++) {
+      const r = reshuffle(4, 1);
+      expect(r[0]).not.toBe(1);
+      expect([...r].sort()).toEqual([0, 1, 2, 3]);
+    }
+  });
+  it("checks and describes settings", () => {
+    expect(withDefaults({ interval: 0, fit: "tile" as never, background: "red" })).toEqual(DEFAULT_SETTINGS);
+    expect(validSettings({ ...DEFAULT_SETTINGS, interval: 0.5 })).toBe(false);
+    expect(describeSettings(DEFAULT_SETTINGS)).toBe("Every 5 s · cross-fade 1 s · fit");
+    expect(describeSettings({ ...DEFAULT_SETTINGS, advance: "manual", crossfade: false, fit: "center", loop: false, shuffle: true })).toBe(
+      "Advance by hand · actual size · shuffled · once",
+    );
+    // Fades never outlast most of a slide.
+    expect(fadeMillis({ ...DEFAULT_SETTINGS, interval: 2, fade: 3 })).toBe(1500);
+    expect(fadeMillis({ ...DEFAULT_SETTINGS, advance: "manual", fade: 3 })).toBe(3000);
+    expect(fadeMillis({ ...DEFAULT_SETTINGS, crossfade: false })).toBe(0);
+  });
+  it("shows originals where they animate or have transparency", () => {
+    expect(slideSource({ id: 7, format: "gif", size: 5 << 20 }, 3000)).toBe("/api/images/7/original");
+    expect(slideSource({ id: 7, format: "png", size: 90 << 20 }, 3000)).toBe("/api/images/7/preview?size=2560");
+    expect(slideSource({ id: 7, format: "jpeg", size: 1000 }, 1200)).toBe("/api/images/7/preview?size=1600");
+  });
+  it("links slideshows", () => {
+    expect(slideshowPath({ deck: 4, start: 3 })).toBe("/slideshow?deck=4&start=3");
+    expect(slideshowPath({ params: new URLSearchParams("tag=cats&sort=name") })).toBe("/slideshow?tag=cats&sort=name");
   });
 });

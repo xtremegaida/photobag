@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"photobag/internal/decks"
 	"photobag/internal/experiments"
 	"photobag/internal/library"
 	"photobag/internal/scoring"
@@ -187,9 +188,9 @@ func writeError(w http.ResponseWriter, err error) {
 		status = ae.status
 	case errors.Is(err, library.ErrNotFound), errors.Is(err, scoring.ErrNotFound):
 		status = http.StatusNotFound
-	case errors.Is(err, scoring.ErrConflict), errors.Is(err, experiments.ErrConflict):
+	case errors.Is(err, scoring.ErrConflict), errors.Is(err, experiments.ErrConflict), errors.Is(err, decks.ErrConflict):
 		status = http.StatusConflict
-	case errors.Is(err, experiments.ErrInvalid):
+	case errors.Is(err, experiments.ErrInvalid), errors.Is(err, decks.ErrInvalid):
 		status = http.StatusBadRequest
 	}
 	writeJSON(w, status, map[string]string{"error": err.Error()})
