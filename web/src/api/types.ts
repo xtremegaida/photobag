@@ -28,7 +28,7 @@ export type {
   Report as FileTransferReport,
   Summary as FileSummary,
 } from "./gen/files";
-export type { Analysis, Image, ImageScore, PipelineStats, PurgeResult, Stats, Tag } from "./gen/library";
+export type { Analysis, Image, ImageScore, PipelineStats, PurgeResult, Stats, Tag, ThumbInfo } from "./gen/library";
 export type { ImageQuery, Scope, Sort } from "./gen/query";
 export type { IDPair, Metric, Pair, Ranking, Run, Summary } from "./gen/scoring";
 export type {
@@ -43,6 +43,8 @@ export type {
   Options as ImportOptions,
   Progress as ImportProgress,
   Report as ImportReport,
+  RefreshReport,
+  ThumbReport,
 } from "./gen/importer";
 export type {
   FileReport as ExportFileReport,

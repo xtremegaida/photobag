@@ -28,6 +28,7 @@ import (
 	"photobag/internal/imaging"
 	"photobag/internal/importer"
 	"photobag/internal/jobs"
+	"photobag/internal/lru"
 	"photobag/internal/reencode"
 	"photobag/internal/scoring"
 	"photobag/internal/tagger"
@@ -51,11 +52,17 @@ type Config struct {
 	// TaggerDir is the local tagger installation (default
 	// tagger.DefaultDir()).
 	TaggerDir string
-	Logger    *slog.Logger
+	// ThumbMemory is the memory, in bytes, for thumbnails made when they
+	// are shown, in bags that do not store them (default 256 MiB).
+	ThumbMemory int
+	Logger      *slog.Logger
 }
 
 // DefaultAddr is where serve listens by default.
 const DefaultAddr = "127.0.0.1:7474"
+
+// DefaultThumbMemory is the default Config.ThumbMemory.
+const DefaultThumbMemory = 256 << 20
 
 // Server serves one bag.
 type Server struct {
@@ -67,7 +74,7 @@ type Server struct {
 	jobs    *jobs.Manager
 	scoring *scoring.Service
 	scans   *dedup.Store
-	preview *previewCache
+	preview *lru.Cache
 	simSort *orderCache
 	keys    *analysis.KeyStore
 	tagger  *tagger.Local
@@ -111,6 +118,10 @@ func New(b *bag.Bag, cfg Config) *Server {
 	if cfg.TaggerDir == "" {
 		cfg.TaggerDir = tagger.DefaultDir()
 	}
+	if cfg.ThumbMemory <= 0 {
+		cfg.ThumbMemory = DefaultThumbMemory
+	}
+	b.Thumbs = lru.New(cfg.ThumbMemory)
 	ctx, cancel := context.WithCancel(context.Background())
 	ev := events.New()
 	var tok [16]byte
@@ -122,7 +133,7 @@ func New(b *bag.Bag, cfg Config) *Server {
 		jobs:    jobs.NewManager(ctx, ev, cfg.Logger),
 		scoring: scoring.New(b),
 		scans:   dedup.NewStore(),
-		preview: newPreviewCache(256 << 20),
+		preview: lru.New(256 << 20),
 		simSort: newOrderCache(4),
 		keys:    &analysis.KeyStore{Path: cfg.KeyStore},
 		tagger: &tagger.Local{Dir: cfg.TaggerDir, IdleTimeout: 10 * time.Minute, Log: cfg.Logger,

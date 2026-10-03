@@ -24,6 +24,7 @@ import type {
   Stats,
   Tag,
   TaggerStatus,
+  ThumbInfo,
 } from "./types";
 
 export const qk = {
@@ -46,6 +47,7 @@ export const qk = {
   analysisStats: ["analysis-stats"] as const,
   analysisPlan: (o: AnalysisOptions) => ["analysis-plan", o] as const,
   taggerStatus: ["tagger-status"] as const,
+  thumbSettings: ["thumb-settings"] as const,
 };
 
 /** Maps server "changed" topics to the query keys they invalidate. */
@@ -66,6 +68,7 @@ const topicKeys: Record<string, string[]> = {
   experiments: ["experiments", "experiment"],
   workflows: ["workflows", "workflow", "workflow-version", "generation"],
   "comfy-settings": ["comfy-settings", "comfy-nodes"],
+  thumbnails: ["thumb-settings", "stats"],
 };
 
 export function invalidateTopics(qc: QueryClient, topics: string[]) {
@@ -79,6 +82,20 @@ export function invalidateTopics(qc: QueryClient, topics: string[]) {
 
 export function useStats() {
   return useQuery({ queryKey: qk.stats, queryFn: () => api.get<Stats>("/api/stats") });
+}
+
+/** Where the bag keeps its thumbnails, and the space and memory they take. */
+export function useThumbSettings() {
+  return useQuery({ queryKey: qk.thumbSettings, queryFn: () => api.get<ThumbInfo>("/api/settings/thumbnails") });
+}
+
+/** Changes where the bag keeps its thumbnails, as a job. */
+export function useSetThumbMode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mode: ThumbInfo["mode"]) => api.put<Job>("/api/settings/thumbnails", { mode }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.jobs }),
+  });
 }
 
 export function useTags() {

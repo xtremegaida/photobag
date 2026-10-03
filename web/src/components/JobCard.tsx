@@ -12,6 +12,7 @@ import type {
   ImportReport,
   Job,
   ReencodeProgress,
+  ThumbReport,
 } from "../api/types";
 import { formatBytes, formatDate } from "../lib/format";
 import { eta, formatDuration, pipelineInfo } from "../lib/pipelines";
@@ -37,8 +38,15 @@ function ProgressLine({ job }: { job: Job }) {
         : `${p.done}/${p.found} files · ${p.added} added · ${p.skipped} skipped · ${p.failed} failed`;
   } else if (job.kind === "export" && p.total !== undefined) {
     detail = `${p.done}/${p.total} images · ${p.written} written · ${p.skipped} skipped · ${p.failed} failed`;
-  } else if ((job.kind === "dedup-scan" || job.kind === "refresh") && p.total !== undefined) {
+  } else if (job.kind === "dedup-scan" && p.total !== undefined) {
     detail = `Comparing thumbprints ${p.done}/${p.total}`;
+  } else if (job.kind === "refresh" && p.total !== undefined) {
+    detail = `${p.done}/${p.total} image files`;
+  } else if (job.kind === "thumbnails" && p.total !== undefined) {
+    detail =
+      p.phase === "freeing"
+        ? `Giving space back to the disk · ${Math.round((frac ?? 0) * 100)}%`
+        : `${p.done}/${p.total} thumbnails made`;
   } else if ((job.kind === "files-import" || job.kind === "files-export") && p.phase) {
     detail =
       p.phase === "scanning"
@@ -229,6 +237,16 @@ function GenericResult({ job }: { job: Job }) {
     return (
       <Text size="sm">
         Updated {String(r.updated)} of {String(r.checked)} image file(s){Number(r.failed) ? `, ${String(r.failed)} failed` : ""}.
+      </Text>
+    );
+  }
+  if (job.kind === "thumbnails") {
+    const t = r as unknown as ThumbReport;
+    return (
+      <Text size="sm">
+        {t.mode === "stored"
+          ? `Thumbnails are stored in the bag: ${t.made} made${t.failed ? `, ${t.failed} failed` : ""}.`
+          : `Thumbnails are made on demand now. The bag went from ${formatBytes(t.before)} to ${formatBytes(t.after)}.`}
       </Text>
     );
   }

@@ -59,6 +59,12 @@ export interface Bag {
    * so code must never hold rows open on R while writing.
    */
   R?: any /* sql.DB */;
+  /**
+   * Thumbs holds thumbnails made when they were shown, in memory, for
+   * bags that do not store them (nil: none are kept, as in command-line
+   * runs). See library.Thumb.
+   */
+  Thumbs?: any /* lru.Cache */;
 }
 /**
  * FileStats describes the on-disk size of the bag.

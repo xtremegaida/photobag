@@ -38,6 +38,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/images/{id}/preview", s.imagePreview)
 	s.handle(mux, "GET /api/images/{id}/original", s.imageOriginal)
 	s.handle(mux, "GET /api/thumbs/{sha}", s.thumb)
+	s.handle(mux, "GET /api/settings/thumbnails", s.getThumbSettings)
+	s.handle(mux, "PUT /api/settings/thumbnails", s.putThumbSettings)
 	s.handle(mux, "POST /api/images/tags", s.bulkTags)
 	s.handle(mux, "POST /api/images/trash", s.trashImages)
 	s.handle(mux, "POST /api/images/restore", s.restoreImages)
@@ -334,7 +336,7 @@ func (s *Server) sendPreview(w http.ResponseWriter, r *http.Request, blobID int6
 		return nil
 	}
 	key := fmt.Sprintf("%s/%d", sha, size)
-	data, err := s.preview.get(key, func() ([]byte, error) {
+	data, err := s.preview.Get(key, func() ([]byte, error) {
 		select {
 		case previewSlots <- struct{}{}:
 		case <-ctx.Done():

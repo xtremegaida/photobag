@@ -216,6 +216,54 @@ export interface Tag {
 }
 
 //////////
+// source: thumbs.go
+
+/**
+ * ThumbMode says where a bag keeps its thumbnails.
+ */
+export type ThumbMode = string;
+/**
+ * ThumbsStored keeps every thumbnail in the bag: browsing is fast, at
+ * the cost of space (the default).
+ */
+export const ThumbsStored: ThumbMode = "stored";
+/**
+ * ThumbsOnDemand stores none: they are made from the original when
+ * first shown and kept in memory until the server stops.
+ */
+export const ThumbsOnDemand: ThumbMode = "on-demand";
+/**
+ * ThumbModeKey is the meta key holding the bag's ThumbMode.
+ */
+export const ThumbModeKey = "thumbnails";
+/**
+ * ThumbInfo describes where a bag keeps its thumbnails, and the space and
+ * memory they take.
+ */
+export interface ThumbInfo {
+  mode: 'stored' | 'on-demand';
+  /**
+   * Files counts the image files held (originals, generated images,
+   * re-encoded versions): each has a thumbnail.
+   */
+  files: number /* int64 */;
+  /**
+   * Stored counts the thumbnails in the bag file and StoredBytes is their
+   * size; in large bags both are estimated from a sample.
+   */
+  stored: number /* int64 */;
+  storedBytes: number /* int64 */;
+  estimated: boolean;
+  /**
+   * InMemory and MemoryBytes are the thumbnails made on demand held in
+   * memory now, up to MemoryLimit bytes.
+   */
+  inMemory: number /* int */;
+  memoryBytes: number /* int64 */;
+  memoryLimit: number /* int64 */;
+}
+
+//////////
 // source: trash.go
 
 /**

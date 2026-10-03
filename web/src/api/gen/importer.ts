@@ -82,5 +82,27 @@ export interface RefreshReport {
 }
 
 //////////
+// source: thumbs.go
+
+/**
+ * ThumbReport is the outcome of changing where a bag keeps its thumbnails.
+ */
+export interface ThumbReport {
+  mode: 'stored' | 'on-demand';
+  /**
+   * Made and Failed count the thumbnails made to store (switching to
+   * stored thumbnails).
+   */
+  made: number /* int */;
+  failed: number /* int */;
+  /**
+   * Before and After are the bag file's size, around dropping the stored
+   * thumbnails.
+   */
+  before: number /* int64 */;
+  after: number /* int64 */;
+}
+
+//////////
 // source: writer.go
 

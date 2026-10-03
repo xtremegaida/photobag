@@ -267,21 +267,6 @@ func BlobData(ctx context.Context, b *bag.Bag, blobID int64) ([]byte, error) {
 	return data, err
 }
 
-// Thumb returns the thumbnail JPEG for a blob sha256 (hex).
-func Thumb(ctx context.Context, b *bag.Bag, shaHex string) ([]byte, error) {
-	sha, err := hex.DecodeString(shaHex)
-	if err != nil || len(sha) != 32 {
-		return nil, ErrNotFound
-	}
-	var data []byte
-	err = b.R.QueryRowContext(ctx,
-		"SELECT th.data FROM blobs bl JOIN thumbnails th ON th.blob_id = bl.id WHERE bl.sha256 = ?", sha).Scan(&data)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	return data, err
-}
-
 // BlobSHA returns a blob's sha256 in hex.
 func BlobSHA(ctx context.Context, b *bag.Bag, blobID int64) (string, error) {
 	var sha []byte
@@ -302,17 +287,6 @@ func BlobDataBySHA(ctx context.Context, b *bag.Bag, shaHex string) ([]byte, erro
 	err = b.R.QueryRowContext(ctx, "SELECT data FROM blobs WHERE sha256 = ?", sha).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
-	}
-	return data, err
-}
-
-// ThumbByID returns the thumbnail JPEG of an image.
-func ThumbByID(ctx context.Context, b *bag.Bag, id int64) ([]byte, error) {
-	var data []byte
-	err := b.R.QueryRowContext(ctx,
-		"SELECT th.data FROM images i JOIN thumbnails th ON th.blob_id = i.blob_id WHERE i.id = ?", id).Scan(&data)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
 	}
 	return data, err
 }

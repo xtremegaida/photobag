@@ -2,6 +2,7 @@ package imaging
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -47,9 +48,8 @@ func Process(f Format, b []byte) (*Result, error) {
 // display size is dw×dh.
 func derive(f Format, img image.Image, dw, dh int, meta Meta) (*Result, error) {
 	work := Orient(Downscale(img, WorkingSize), meta.Orientation)
-	thumb := Resize(work, ThumbSize)
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: ThumbQuality}); err != nil {
+	thumb, tw, th, err := encodeThumb(work)
+	if err != nil {
 		return nil, err
 	}
 	return &Result{
@@ -57,11 +57,42 @@ func derive(f Format, img image.Image, dw, dh int, meta Meta) (*Result, error) {
 		Width:       dw,
 		Height:      dh,
 		Meta:        meta,
-		Thumb:       buf.Bytes(),
-		ThumbW:      thumb.Rect.Dx(),
-		ThumbH:      thumb.Rect.Dy(),
+		Thumb:       thumb,
+		ThumbW:      tw,
+		ThumbH:      th,
 		Fingerprint: ComputeFingerprint(work),
 	}, nil
+}
+
+// encodeThumb makes the thumbnail JPEG of an oriented working image.
+func encodeThumb(work *image.RGBA) (data []byte, w, h int, err error) {
+	thumb := Resize(work, ThumbSize)
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: ThumbQuality}); err != nil {
+		return nil, 0, 0, err
+	}
+	return buf.Bytes(), thumb.Rect.Dx(), thumb.Rect.Dy(), nil
+}
+
+// Thumbnail makes only the thumbnail of an image, the way Process does,
+// for bags that make thumbnails when they are shown.
+func Thumbnail(f Format, b []byte) (data []byte, w, h int, err error) {
+	work, err := Working(f, b)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return encodeThumb(work)
+}
+
+// Identify names the format of image bytes already in a bag. They were
+// checked on import, where a .bmp name may have vouched for a BMP with an
+// unusual header, so here any file starting with "BM" counts as one.
+func Identify(b []byte) (Format, error) {
+	f, reason := Sniff(b[:min(len(b), SniffLen)], ".bmp")
+	if f == "" {
+		return "", errors.New(reason)
+	}
+	return f, nil
 }
 
 // Working returns the oriented working image used for fingerprints.

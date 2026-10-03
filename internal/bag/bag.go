@@ -19,6 +19,7 @@ import (
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 
+	"photobag/internal/lru"
 	"photobag/internal/sysutil"
 )
 
@@ -60,6 +61,11 @@ type Bag struct {
 	// R is the reader pool. In DELETE/exclusive mode it is the same pool as W,
 	// so code must never hold rows open on R while writing.
 	R *sql.DB
+
+	// Thumbs holds thumbnails made when they were shown, in memory, for
+	// bags that do not store them (nil: none are kept, as in command-line
+	// runs). See library.Thumb.
+	Thumbs *lru.Cache
 
 	log       *slog.Logger
 	lastWrite atomic.Int64

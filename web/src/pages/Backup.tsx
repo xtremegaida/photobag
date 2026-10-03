@@ -4,10 +4,11 @@ import { IconDeviceFloppy, IconDownload, IconPackage } from "@tabler/icons-react
 import { useState } from "react";
 import { errorMessage } from "../api/client";
 import { downloadWhenDone } from "../api/events";
-import { useStats, useSubmitJob } from "../api/hooks";
+import { useStats, useSubmitJob, useThumbSettings } from "../api/hooks";
 import { FolderPicker } from "../components/FolderPicker";
 import { Page } from "../components/Page";
 import { RecentJobs } from "../components/RecentJobs";
+import { storedSize, ThumbnailSettings } from "../components/ThumbnailSettings";
 import { formatBytes } from "../lib/format";
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -23,6 +24,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function BackupPage() {
   const { data: stats } = useStats();
+  const { data: thumbs } = useThumbSettings();
   const submit = useSubmitJob();
   const [path, setPath] = useState("");
   const onError = (e: unknown) => notifications.show({ color: "red", message: errorMessage(e) });
@@ -35,14 +37,17 @@ export function BackupPage() {
     <Page
       title="Backup"
       description="A backup is a complete, compacted copy of the bag (VACUUM INTO): one self-contained file with every image, tag, run and score. Open it with PhotoBag like any bag."
-      side={<RecentJobs kinds={["backup", "compact"]} />}
+      side={<RecentJobs kinds={["backup", "compact", "thumbnails"]} />}
     >
       {stats && (
         <Card withBorder>
-          <SimpleGrid cols={{ base: 2, sm: 4 }}>
+          <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }}>
             <Stat label="Bag file" value={formatBytes(stats.file.sizeBytes)} />
             <Stat label="Free pages" value={formatBytes(stats.file.freeBytes)} />
             <Stat label="Originals" value={formatBytes(stats.originalBytes)} />
+            {thumbs && (
+              <Stat label="Thumbnails" value={thumbs.mode === "stored" ? storedSize(thumbs) : "Made when shown"} />
+            )}
             <Stat label="Images" value={stats.images.toLocaleString()} />
           </SimpleGrid>
           <Text size="xs" c="dimmed" mt="sm" style={{ wordBreak: "break-all" }}>
@@ -94,6 +99,7 @@ export function BackupPage() {
           </Group>
         </Stack>
       </Card>
+      <ThumbnailSettings />
     </Page>
   );
 }

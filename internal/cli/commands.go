@@ -22,6 +22,7 @@ import (
 func serveCmd(g *globals) *cobra.Command {
 	var cfg server.Config
 	var open bool
+	var thumbMB int
 	cmd := &cobra.Command{
 		Use:   "serve <bag>",
 		Short: "Serve the web UI for a bag",
@@ -32,6 +33,7 @@ func serveCmd(g *globals) *cobra.Command {
 				return err
 			}
 			defer b.Close()
+			cfg.ThumbMemory = thumbMB << 20
 			srv := server.New(b, cfg)
 			if err := srv.Listen(); err != nil {
 				return err
@@ -58,6 +60,8 @@ func serveCmd(g *globals) *cobra.Command {
 	cmd.Flags().BoolVar(&cfg.Dev, "dev", false, "development mode: use the Vite dev server for the UI")
 	cmd.Flags().BoolVar(&cfg.AllowRemote, "allow-remote", false, "accept requests for any host name (LAN access)")
 	cmd.Flags().BoolVar(&cfg.NoToken, "no-token", false, "do not require the per-launch access token")
+	cmd.Flags().IntVar(&thumbMB, "thumb-memory", server.DefaultThumbMemory>>20,
+		"MiB of memory for thumbnails made on demand (bags that do not store them)")
 	return cmd
 }
 
@@ -272,6 +276,74 @@ func refreshCmd(g *globals) *cobra.Command {
 	}
 }
 
+var thumbModeText = map[library.ThumbMode]string{
+	library.ThumbsStored:   "stored in the bag",
+	library.ThumbsOnDemand: "made on demand (not stored in the bag)",
+}
+
+func thumbnailsCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "thumbnails <bag> [stored|on-demand]",
+		Short: "Show or change where a bag keeps its thumbnails",
+		Long: `Thumbnails are either stored in the bag (the default: fast browsing, at the
+cost of space), or made on demand: not stored, but made from the original
+the first time an image is shown and kept in memory until the server stops.
+
+Switching to on-demand removes the stored thumbnails and gives their space
+back to the disk. Switching back makes a thumbnail for every image file,
+which takes a while in a large bag.`,
+		Args:      cobra.RangeArgs(1, 2),
+		ValidArgs: []string{string(library.ThumbsStored), string(library.ThumbsOnDemand)},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			b, err := g.open(args[0])
+			if err != nil {
+				return err
+			}
+			defer b.Close()
+			ctx, stop := signalContext()
+			defer stop()
+			if len(args) == 1 {
+				t, err := library.GetThumbInfo(ctx, b)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("Thumbnails are %s.\n", thumbModeText[t.Mode])
+				if t.Stored > 0 {
+					about := ""
+					if t.Estimated {
+						about = "about "
+					}
+					fmt.Printf("The bag holds %s%d thumbnail(s) for %d image file(s), taking %s%s.\n",
+						about, t.Stored, t.Files, about, humanBytes(t.StoredBytes))
+				}
+				return nil
+			}
+			mode := library.ThumbMode(args[1])
+			if !mode.Valid() {
+				return fmt.Errorf("the mode is %q or %q, not %q", library.ThumbsStored, library.ThumbsOnDemand, args[1])
+			}
+			st := newStatus()
+			rep, err := importer.SetThumbMode(ctx, b, mode, func(done, total int) {
+				if mode == library.ThumbsStored {
+					st.update(done == total, "Making thumbnails %d/%d", done, total)
+				} else {
+					st.update(done == total, "Giving space back %d%%", done*100/max(total, 1))
+				}
+			})
+			st.done()
+			if rep != nil {
+				if mode == library.ThumbsStored {
+					fmt.Printf("Thumbnails are stored in the bag: %d made, %d failed.\n", rep.Made, rep.Failed)
+				} else {
+					fmt.Printf("Thumbnails are made on demand; the bag went from %s to %s.\n",
+						humanBytes(rep.Before), humanBytes(rep.After))
+				}
+			}
+			return err
+		},
+	}
+}
+
 func infoCmd(g *globals) *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
@@ -299,6 +371,9 @@ func infoCmd(g *globals) *cobra.Command {
 				humanBytes(st.File.SizeBytes), humanBytes(st.File.FreeBytes), st.File.SchemaVersion, st.File.JournalMode)
 			fmt.Printf("Images:       %d active, %d in trash, %d purged\n", st.Images, st.Trashed, st.Purged)
 			fmt.Printf("Originals:    %d distinct blobs, %s\n", st.Blobs, humanBytes(st.OriginalBytes))
+			if mode, err := library.GetThumbMode(ctx, b); err == nil {
+				fmt.Printf("Thumbnails:   %s\n", thumbModeText[mode])
+			}
 			fmt.Printf("Tags:         %d\n", st.Tags)
 			fmt.Printf("Scoring:      %d metric(s), %d run(s), %d comparison(s)\n", st.Metrics, st.Runs, st.Comparisons)
 			tags, err := library.ListTags(ctx, b)

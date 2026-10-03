@@ -15,6 +15,7 @@ import (
 
 	"photobag/internal/bag"
 	"photobag/internal/imaging"
+	"photobag/internal/library"
 )
 
 // memoryBudget bounds the decoded pixels in flight across workers.
@@ -264,8 +265,7 @@ func process(ctx context.Context, b *bag.Bag, batch int64, w work, s Settings, m
 			return err
 		}
 		res := r.Result
-		if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO thumbnails(blob_id, width, height, data) VALUES (?, ?, ?, ?)",
-			blob, res.ThumbW, res.ThumbH, res.Thumb); err != nil {
+		if err := library.SaveThumb(ctx, tx, b, blob, sum[:], res); err != nil {
 			return err
 		}
 		fp := res.Fingerprint

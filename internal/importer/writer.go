@@ -112,8 +112,7 @@ func (r *run) insert(ctx context.Context, tx *sql.Tx, it *item) error {
 		return err
 	}
 	if res := it.res; res != nil {
-		if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO thumbnails(blob_id, width, height, data) VALUES (?, ?, ?, ?)",
-			blobID, res.ThumbW, res.ThumbH, res.Thumb); err != nil {
+		if err := library.SaveThumb(ctx, tx, r.b, blobID, it.sha[:], res); err != nil {
 			return err
 		}
 		fp := res.Fingerprint

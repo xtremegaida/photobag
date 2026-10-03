@@ -196,6 +196,46 @@ func (s *Server) startCompact(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, job)
 }
 
+func (s *Server) getThumbSettings(w http.ResponseWriter, r *http.Request) error {
+	t, err := library.GetThumbInfo(r.Context(), s.b)
+	if err != nil {
+		return err
+	}
+	return ok(w, t)
+}
+
+// putThumbSettings changes where the bag keeps its thumbnails, as a job:
+// making them all, or dropping them and giving the space back, takes a
+// while in a large bag.
+func (s *Server) putThumbSettings(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Mode library.ThumbMode `json:"mode"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		return err
+	}
+	if !req.Mode.Valid() {
+		return badRequest(fmt.Errorf("mode must be %q or %q", library.ThumbsStored, library.ThumbsOnDemand))
+	}
+	title := "Store thumbnails in the bag"
+	if req.Mode == library.ThumbsOnDemand {
+		title = "Make thumbnails on demand"
+	}
+	job := s.jobs.Submit("thumbnails", title, func(ctx context.Context, report func(any, string)) (any, error) {
+		phase := "making"
+		if req.Mode == library.ThumbsOnDemand {
+			phase = "freeing"
+			report(map[string]any{"phase": "dropping"}, "Removing the stored thumbnails")
+		}
+		rep, err := importer.SetThumbMode(ctx, s.b, req.Mode, func(done, total int) {
+			report(map[string]any{"phase": phase, "done": done, "total": total}, "")
+		})
+		s.events.Changed("thumbnails")
+		return rep, err
+	})
+	return ok(w, job)
+}
+
 func (s *Server) startEmptyTrash(w http.ResponseWriter, r *http.Request) error {
 	var req idsRequest
 	if err := readJSON(r, &req); err != nil {

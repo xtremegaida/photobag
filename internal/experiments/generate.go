@@ -15,6 +15,7 @@ import (
 	"photobag/internal/bag"
 	"photobag/internal/comfy"
 	"photobag/internal/imaging"
+	"photobag/internal/library"
 )
 
 // resolved is what a request runs.
@@ -311,8 +312,7 @@ func (g *generation) store(i int, out comfy.Output) (int64, error) {
 		if err := tx.QueryRowContext(ctx, "SELECT id FROM blobs WHERE sha256 = ?", sum[:]).Scan(&blobID); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO thumbnails(blob_id, width, height, data) VALUES (?, ?, ?, ?)",
-			blobID, res.ThumbW, res.ThumbH, res.Thumb); err != nil {
+		if err := library.SaveThumb(ctx, tx, g.b, blobID, sum[:], res); err != nil {
 			return err
 		}
 		fp := res.Fingerprint

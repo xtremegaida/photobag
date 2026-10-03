@@ -17,6 +17,7 @@ import (
 
 	"photobag/internal/bag"
 	"photobag/internal/jobs"
+	"photobag/internal/library"
 	"photobag/internal/testimg"
 )
 
@@ -213,6 +214,49 @@ func TestServerEndToEnd(t *testing.T) {
 	pres.Body.Close()
 	if etag := pres.Header.Get("ETag"); im.SHA256 == "" || !strings.HasPrefix(etag, `"`+im.SHA256+"-800-") {
 		t.Errorf("preview ETag %s for sha %s", etag, im.SHA256)
+	}
+
+	// Thumbnails made on demand: the stored ones are dropped, and the same
+	// pictures are made when shown.
+	thumbOf := func(path string) []byte {
+		t.Helper()
+		res, err := c.http.Get(base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		data, _ := io.ReadAll(res.Body)
+		if res.StatusCode != 200 || len(data) == 0 {
+			t.Fatalf("GET %s: %d", path, res.StatusCode)
+		}
+		return data
+	}
+	storedThumb := thumbOf("/api/images/" + itoa(ids.IDs[0]) + "/thumb")
+	var ti library.ThumbInfo
+	c.do("GET", "/api/settings/thumbnails", nil, &ti)
+	if ti.Mode != library.ThumbsStored || ti.Stored == 0 || ti.Stored != ti.Files || ti.MemoryLimit != DefaultThumbMemory {
+		t.Errorf("thumbnail settings %+v", ti)
+	}
+	if st := c.do("PUT", "/api/settings/thumbnails", map[string]string{"mode": "sideways"}, nil); st != http.StatusBadRequest {
+		t.Errorf("unknown mode: %d", st)
+	}
+	c.do("PUT", "/api/settings/thumbnails", map[string]string{"mode": "on-demand"}, &job)
+	if job = c.waitJob(job.ID); job.Status != jobs.Done {
+		t.Fatalf("thumbnail job %+v", job)
+	}
+	c.do("GET", "/api/settings/thumbnails", nil, &ti)
+	if ti.Mode != library.ThumbsOnDemand || ti.Stored != 0 || ti.InMemory != 0 {
+		t.Errorf("thumbnail settings on demand %+v", ti)
+	}
+	if got := thumbOf("/api/images/" + itoa(ids.IDs[0]) + "/thumb"); !bytes.Equal(got, storedThumb) {
+		t.Error("the thumbnail made on demand differs from the stored one")
+	}
+	if got := thumbOf("/api/thumbs/" + im.SHA256); !bytes.Equal(got, storedThumb) {
+		t.Error("the thumbnail by sha differs")
+	}
+	c.do("GET", "/api/settings/thumbnails", nil, &ti)
+	if ti.InMemory != 1 || ti.MemoryBytes != int64(len(storedThumb)) {
+		t.Errorf("thumbnails in memory %+v", ti)
 	}
 
 	// Scoring over the API: answer everything with a fixed preference.

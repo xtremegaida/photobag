@@ -8,6 +8,7 @@ import (
 
 	"photobag/internal/bag"
 	"photobag/internal/imaging"
+	"photobag/internal/library"
 )
 
 // RefreshReport summarises a derivative refresh.
@@ -17,19 +18,29 @@ type RefreshReport struct {
 	Failed  int `json:"failed"`
 }
 
-// Outdated counts blobs whose thumbnail or thumbprint is missing or was
-// made by an older thumbprint version.
+// Outdated counts blobs whose thumbprint is missing or was made by an
+// older thumbprint version, or whose thumbnail is missing from a bag that
+// stores them.
 func Outdated(ctx context.Context, b *bag.Bag) (int, error) {
+	q, args, err := outdatedSQL(ctx, b, "count(*)")
+	if err != nil {
+		return 0, err
+	}
 	var n int
-	err := b.R.QueryRowContext(ctx, outdatedSQL("count(*)"), imaging.FingerprintVersion).Scan(&n)
+	err = b.R.QueryRowContext(ctx, q, args...).Scan(&n)
 	return n, err
 }
 
-func outdatedSQL(cols string) string {
+func outdatedSQL(ctx context.Context, b *bag.Bag, cols string) (string, []any, error) {
+	mode, err := library.GetThumbMode(ctx, b)
+	if err != nil {
+		return "", nil, err
+	}
 	return `SELECT ` + cols + ` FROM blobs bl
 		LEFT JOIN fingerprints f ON f.blob_id = bl.id
 		LEFT JOIN thumbnails th ON th.blob_id = bl.id
-		WHERE f.blob_id IS NULL OR th.blob_id IS NULL OR f.version < ?`
+		WHERE f.blob_id IS NULL OR f.version < ? OR (th.blob_id IS NULL AND ?)`,
+		[]any{imaging.FingerprintVersion, mode == library.ThumbsStored}, nil
 }
 
 // Refresh regenerates missing or outdated thumbnails and thumbprints, for
@@ -38,7 +49,11 @@ func Refresh(ctx context.Context, b *bag.Bag, progress func(done, total int)) (*
 	if progress == nil {
 		progress = func(int, int) {}
 	}
-	rows, err := b.R.QueryContext(ctx, outdatedSQL("bl.id"), imaging.FingerprintVersion)
+	q, args, err := outdatedSQL(ctx, b, "bl.id")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := b.R.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -57,6 +72,7 @@ func Refresh(ctx context.Context, b *bag.Bag, progress func(done, total int)) (*
 
 	type result struct {
 		blob int64
+		sha  []byte
 		res  *imaging.Result
 	}
 	jobs := make(chan int64)
@@ -67,18 +83,21 @@ func Refresh(ctx context.Context, b *bag.Bag, progress func(done, total int)) (*
 		go func() {
 			defer wg.Done()
 			for id := range jobs {
-				var data []byte
-				var format string
-				err := b.R.QueryRowContext(ctx, `SELECT bl.data, i.format FROM blobs bl
-					JOIN images i ON i.blob_id = bl.id WHERE bl.id = ? LIMIT 1`, id).Scan(&data, &format)
+				// Blobs of generated images and of re-encoded versions have
+				// no image row, so the format is read from the bytes.
+				var sha, data []byte
+				err := b.R.QueryRowContext(ctx, "SELECT sha256, data FROM blobs WHERE id = ?", id).Scan(&sha, &data)
 				var r *imaging.Result
 				if err == nil {
-					r, err = imaging.Process(imaging.Format(format), data)
+					var f imaging.Format
+					if f, err = imaging.Identify(data); err == nil {
+						r, err = imaging.Process(f, data)
+					}
 				}
 				if err != nil {
 					r = nil
 				}
-				results <- result{id, r}
+				results <- result{id, sha, r}
 			}
 		}()
 	}
@@ -108,9 +127,7 @@ func Refresh(ctx context.Context, b *bag.Bag, progress func(done, total int)) (*
 		default:
 			fp := r.res.Fingerprint
 			err := b.Tx(ctx, func(tx *sql.Tx) error {
-				if _, err := tx.ExecContext(ctx, `INSERT INTO thumbnails(blob_id, width, height, data) VALUES (?, ?, ?, ?)
-					ON CONFLICT(blob_id) DO UPDATE SET width = excluded.width, height = excluded.height, data = excluded.data`,
-					r.blob, r.res.ThumbW, r.res.ThumbH, r.res.Thumb); err != nil {
+				if err := library.SaveThumb(ctx, tx, b, r.blob, r.sha, r.res); err != nil {
 					return err
 				}
 				_, err := tx.ExecContext(ctx, `INSERT INTO fingerprints(blob_id, version, phash, color, aspect, ac_energy)
