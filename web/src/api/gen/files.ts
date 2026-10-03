@@ -131,6 +131,10 @@ export const ConflictReplace = "replace"; // a file replaces the file of the sam
  * Conflict policies, for a name that is already taken.
  */
 export const ConflictSkip = "skip"; // leave what is there
+/**
+ * Conflict policies, for a name that is already taken.
+ */
+export const ConflictFail = "fail"; // refuse with ErrConflict (for a name chosen by hand)
 
 //////////
 // source: transfer.go

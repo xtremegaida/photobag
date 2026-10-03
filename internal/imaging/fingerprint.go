@@ -11,6 +11,11 @@ import (
 // the pipeline or maths changes so stored fingerprints can be recomputed.
 const FingerprintVersion = 1
 
+// RenderVersion changes whenever thumbnails or previews of the same file
+// come out differently (2: lossy WebP decoded in studio range), so browsers
+// drop what they cached.
+const RenderVersion = 2
+
 // FlatEnergy is the ACEnergy below which an image counts as "flat" (sky,
 // black frames, blank scans): its pHash bits are mostly noise.
 const FlatEnergy = 3.0

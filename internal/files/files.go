@@ -19,6 +19,10 @@ var ErrNotFound = library.ErrNotFound
 // ErrConflict reports a name already taken in a folder.
 var ErrConflict = errors.New("conflict")
 
+// ErrChanged reports that a file is no longer the version an edit started
+// from.
+var ErrChanged = errors.New("the file has changed since it was opened")
+
 // ErrInvalid marks errors in what was asked for (a bad name, moving a
 // folder into itself...), as opposed to failures.
 var ErrInvalid = errors.New("invalid")
@@ -99,13 +103,14 @@ const (
 	ConflictRename  = "rename"  // keep both: the newcomer gets " (2)"
 	ConflictReplace = "replace" // a file replaces the file of the same name
 	ConflictSkip    = "skip"    // leave what is there
+	ConflictFail    = "fail"    // refuse with ErrConflict (for a name chosen by hand)
 )
 
 func validConflict(c string) (string, error) {
 	switch c {
 	case "":
 		return ConflictRename, nil
-	case ConflictRename, ConflictReplace, ConflictSkip:
+	case ConflictRename, ConflictReplace, ConflictSkip, ConflictFail:
 		return c, nil
 	}
 	return "", invalidf("unknown way to handle existing files %q", c)

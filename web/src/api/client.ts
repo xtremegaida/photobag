@@ -14,7 +14,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(path, init);
+  return parse<T>(await fetch(path, init));
+}
+
+/** Sends bytes as the request body (file contents), expecting JSON back. */
+export async function sendBytes<T>(method: string, path: string, body: BodyInit, headers: Record<string, string> = {}): Promise<T> {
+  return parse<T>(await fetch(path, { method, credentials: "same-origin", headers, body }));
+}
+
+async function parse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
     try {
@@ -55,10 +63,34 @@ export async function exchangeToken(): Promise<void> {
   window.history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
-export const thumbUrl = (id: number) => `/api/images/${id}/thumb`;
-export const previewUrl = (id: number, size = 1600) => `/api/images/${id}/preview?size=${size}`;
+/**
+ * The open bag's tag, from the page the server sent. Image URLs carry it,
+ * since browsers keep thumbnails for good: image 5 of another bag, served
+ * on the same address another day, is another picture. (The Vite dev
+ * server's page has none; images are then cached for the page's life.)
+ */
+export const bagTag =
+  (typeof document !== "undefined" && document.querySelector<HTMLMetaElement>('meta[name="photobag-bag"]')?.content) ||
+  `dev-${Date.now().toString(36)}`;
+
+/** Adds the bag's tag to an image URL. */
+export const tagged = (url: string) => `${url}${url.includes("?") ? "&" : "?"}bag=${bagTag}`;
+
+/**
+ * Adds a content version to the URL of something whose id is used again
+ * once it is deleted (generations, re-encodes, files): within one page
+ * browsers show an image already loaded from a URL again without asking
+ * the server, whatever it says about caching.
+ */
+export const versioned = (url: string, sha: string | undefined) =>
+  sha ? `${url}${url.includes("?") ? "&" : "?"}v=${sha.slice(0, 16)}` : url;
+
+export const thumbUrl = (id: number) => tagged(`/api/images/${id}/thumb`);
+/** The thumbnail of some content (a generation, a re-encode result). */
+export const shaThumbUrl = (sha: string) => tagged(`/api/thumbs/${sha}`);
+export const previewUrl = (id: number, size = 1600) => tagged(`/api/images/${id}/preview?size=${size}`);
 export const originalUrl = (id: number, download = false) =>
-  `/api/images/${id}/original${download ? "?download=1" : ""}`;
+  tagged(`/api/images/${id}/original${download ? "?download=1" : ""}`);
 
 /** Warm the browser cache for an image URL. */
 export function preload(url: string) {

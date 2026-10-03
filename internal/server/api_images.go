@@ -278,8 +278,10 @@ func (s *Server) thumbByID(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// Re-encoding keeps what an image shows, so its thumbnail can be cached
-	// for good even though its file may change.
+	// Image ids are never used again within a bag, and re-encoding keeps
+	// what an image shows, so its thumbnail can be cached for good even
+	// though its file may change. The URL carries the bag's tag (see
+	// bagTag): the same id in another bag is another picture.
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
@@ -316,16 +318,22 @@ func (s *Server) sendPreview(w http.ResponseWriter, r *http.Request, blobID int6
 		}
 	}
 	ctx := r.Context()
-	// Re-encoding gives an image a new blob, so browsers revalidate; the
-	// tag carries the decoder version (2: lossy WebP in studio range).
-	etag := fmt.Sprintf(`"%d-%d-2"`, blobID, size)
+	// Previews are keyed by content, never by blob id: the ids of deleted
+	// blobs are used again (discarded generations, an emptied trash), and
+	// an id means another picture in another bag. Re-encoding gives an
+	// image new content, so browsers revalidate.
+	sha, err := library.BlobSHA(ctx, s.b, blobID)
+	if err != nil {
+		return err
+	}
+	etag := fmt.Sprintf(`"%s-%d-%d"`, sha, size, imaging.RenderVersion)
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "private, no-cache")
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return nil
 	}
-	key := fmt.Sprintf("%d/%d", blobID, size)
+	key := fmt.Sprintf("%s/%d", sha, size)
 	data, err := s.preview.get(key, func() ([]byte, error) {
 		select {
 		case previewSlots <- struct{}{}:
@@ -333,7 +341,7 @@ func (s *Server) sendPreview(w http.ResponseWriter, r *http.Request, blobID int6
 			return nil, ctx.Err()
 		}
 		defer func() { <-previewSlots }()
-		raw, err := library.BlobData(ctx, s.b, blobID)
+		raw, err := library.BlobDataBySHA(ctx, s.b, sha)
 		if err != nil {
 			return nil, err
 		}

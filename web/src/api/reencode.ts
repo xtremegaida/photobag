@@ -1,6 +1,6 @@
 // Queries and mutations for re-encoding images.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./client";
+import { api, tagged, versioned } from "./client";
 import { invalidateTopics } from "./hooks";
 import type {
   ImageQuery,
@@ -25,10 +25,11 @@ export interface ReencodeImages {
 }
 
 /** A result awaiting review. */
-export const resultUrl = (batch: number, image: number) => `/api/reencode/${batch}/result/${image}`;
+export const resultUrl = (batch: number, it: { imageId: number; newSha256?: string }) =>
+  tagged(versioned(`/api/reencode/${batch}/result/${it.imageId}`, it.newSha256));
 
 /** An image's original, as any browser shows it upright and unaltered. */
-export const originalViewUrl = (image: number) => `/api/images/${image}/original?view=1`;
+export const originalViewUrl = (image: number) => tagged(`/api/images/${image}/original?view=1`);
 
 export function useReencodes() {
   return useQuery({ queryKey: rk.batches, queryFn: () => api.get<ReencodeBatch[]>("/api/reencode") });

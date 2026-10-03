@@ -212,6 +212,33 @@ func TestTree(t *testing.T) {
 	}
 }
 
+func TestOverwrite(t *testing.T) {
+	ctx := context.Background()
+	b := open(t)
+	a := store(t, b, 0, "a.md", "first", "")
+	if _, err := files.Store(ctx, b, strings.NewReader("x"), files.PutOptions{Path: "A.md", Conflict: files.ConflictFail}); !errors.Is(err, files.ErrConflict) {
+		t.Errorf("fail on conflict: %v", err)
+	}
+	n, err := files.Overwrite(ctx, b, a.Node.ID, strings.NewReader("second"), a.Node.SHA256)
+	if err != nil || n.ID != a.Node.ID || n.Size != 6 || read(t, b, n.ID) != "second" {
+		t.Fatalf("overwrite: %+v %v", n, err)
+	}
+	if _, err := files.Overwrite(ctx, b, a.Node.ID, strings.NewReader("third"), a.Node.SHA256); !errors.Is(err, files.ErrChanged) {
+		t.Errorf("stale overwrite: %v", err)
+	}
+	if read(t, b, a.Node.ID) != "second" {
+		t.Error("a refused overwrite changed the file")
+	}
+	// The old content is gone; nothing is left over.
+	if c, _ := contents(t, b); c != 1 {
+		t.Errorf("%d contents stored, want 1", c)
+	}
+	dir, _ := files.MakeDir(ctx, b, 0, "d")
+	if _, err := files.Overwrite(ctx, b, dir.ID, strings.NewReader("x"), ""); !errors.Is(err, files.ErrInvalid) {
+		t.Errorf("overwriting a folder: %v", err)
+	}
+}
+
 func TestTransfer(t *testing.T) {
 	ctx := context.Background()
 	b := open(t)

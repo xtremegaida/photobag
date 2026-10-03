@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"photobag/internal/bag"
@@ -183,6 +184,8 @@ func Store(ctx context.Context, b *bag.Bag, r io.Reader, o PutOptions) (*PutResu
 			case conflict == ConflictSkip:
 				id, outcome = existing, Skipped
 				return gcContents(ctx, tx)
+			case conflict == ConflictFail:
+				return conflictf(name)
 			case conflict == ConflictReplace && !isDir:
 				id, outcome = existing, Replaced
 				if _, err := tx.ExecContext(ctx, "UPDATE files SET content_id = ?, size = ?, modified_at = ? WHERE id = ?",
@@ -213,6 +216,51 @@ func Store(ctx context.Context, b *bag.Bag, r io.Reader, o PutOptions) (*PutResu
 		return nil, err
 	}
 	return &PutResult{Node: n, Outcome: outcome}, nil
+}
+
+// Overwrite replaces a file's content, keeping its name and place. With
+// ifSHA set, it refuses with ErrChanged unless the file still has that
+// content, so an edit cannot silently undo a change made meanwhile.
+func Overwrite(ctx context.Context, b *bag.Bag, id int64, r io.Reader, ifSHA string) (*Node, error) {
+	check := func(q querier) error {
+		n, err := get(ctx, q, id)
+		if err != nil {
+			return err
+		}
+		if n.Dir {
+			return invalidf("“%s” is a folder", n.Name)
+		}
+		if ifSHA != "" && !strings.EqualFold(ifSHA, n.SHA256) {
+			return ErrChanged
+		}
+		return nil
+	}
+	if err := check(b.R); err != nil {
+		return nil, err
+	}
+	p, err := writePending(ctx, b, r)
+	if err != nil {
+		return nil, err
+	}
+	err = b.Tx(ctx, func(tx *sql.Tx) error {
+		if err := check(tx); err != nil {
+			return err
+		}
+		content, err := p.finish(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE files SET content_id = ?, size = ?, modified_at = ? WHERE id = ?",
+			content, p.size, bag.NowMillis(), id); err != nil {
+			return err
+		}
+		return gcContents(ctx, tx)
+	})
+	if err != nil {
+		discard(b, p.id)
+		return nil, err
+	}
+	return Get(ctx, b, id)
 }
 
 // Exists reports whether something is already at path below parent.

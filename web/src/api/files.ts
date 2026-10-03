@@ -1,8 +1,8 @@
 // Queries and mutations for the bag's ordinary files.
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./client";
+import { api, sendBytes, versioned } from "./client";
 import { invalidateTopics } from "./hooks";
-import type { FileDeleteResult, FileListing, FileMoveResult, FileNode, FileSummary } from "./types";
+import type { FileDeleteResult, FileListing, FileMoveResult, FileNode, FilePutResult, FileSummary } from "./types";
 
 export const fk = {
   at: (path: string) => ["files", "at", path] as const,
@@ -17,8 +17,8 @@ export const joinPath = (parts: string[]) => parts.filter(Boolean).join("/");
 export const filesRoute = (path: string) =>
   "/files" + (path ? "/" + path.split("/").filter(Boolean).map(encodeURIComponent).join("/") : "");
 
-export const fileContentUrl = (id: number, download = false) =>
-  `/api/files/${id}/content${download ? "?download=1" : ""}`;
+export const fileContentUrl = (node: Pick<FileNode, "id" | "sha256">, download = false) =>
+  versioned(`/api/files/${node.id}/content${download ? "?download=1" : ""}`, node.sha256);
 
 /** Serves a file by its path, which lets relative links in notes work. */
 export const fileRawUrl = (path: string) =>
@@ -62,6 +62,24 @@ export const useMoveFiles = () =>
 
 export const useDeleteFiles = () =>
   useFilesMutation((ids: number[]) => api.post<FileDeleteResult>("/api/files/delete", { ids }));
+
+/** The text of a version of a file, as shown and edited. */
+export const textKey = (id: number, sha: string) => ["file-text", id, sha] as const;
+
+/**
+ * Saves an edit over a file. With ifSha, the server refuses (412) if the
+ * file is no longer that version.
+ */
+export const saveFileContent = (id: number, body: Uint8Array<ArrayBuffer>, ifSha?: string) =>
+  sendBytes<FileNode>("PUT", `/api/files/${id}/content`, body, ifSha ? { "If-Match": `"${ifSha}"` } : {});
+
+/** Makes a file in a folder; the server refuses (409) a name already taken. */
+export const createFile = (parent: number, name: string, body: Uint8Array<ArrayBuffer> = new Uint8Array()) =>
+  sendBytes<FilePutResult>(
+    "PUT",
+    "/api/files/upload?" + new URLSearchParams({ parent: String(parent), path: name, conflict: "fail" }).toString(),
+    body,
+  );
 
 /** Which of these paths (relative to a folder) are already taken. */
 export const checkExisting = (parent: number, paths: string[]) =>

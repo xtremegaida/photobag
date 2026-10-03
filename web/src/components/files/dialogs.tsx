@@ -2,7 +2,7 @@ import { Button, Group, List, Modal, NavLink, ScrollArea, Select, Stack, Text, T
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconFolder, IconFolderOpen, IconFolders } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { errorMessage } from "../../api/client";
 import { useFileFolders } from "../../api/files";
 import { useSubmitJob } from "../../api/hooks";
@@ -10,7 +10,7 @@ import type { FileNode } from "../../api/types";
 import { splitExt } from "../../lib/files";
 import { FolderPicker } from "../FolderPicker";
 
-/** Asks for a name: a new folder's, or a new name for something. */
+/** Asks for a name: a new file's or folder's, or a new name for something. */
 export function NameDialog({
   opened,
   title,
@@ -18,6 +18,8 @@ export function NameDialog({
   confirm,
   loading,
   error,
+  description,
+  requireChange = true,
   onSubmit,
   onClose,
 }: {
@@ -27,6 +29,9 @@ export function NameDialog({
   confirm: string;
   loading?: boolean;
   error?: string;
+  description?: ReactNode;
+  /** Whether the initial name must be changed (a rename). */
+  requireChange?: boolean;
   onSubmit: (name: string) => void;
   onClose: () => void;
 }) {
@@ -48,6 +53,8 @@ export function NameDialog({
             value={name}
             onChange={(e) => setName(e.currentTarget.value)}
             error={error}
+            description={description}
+            inputWrapperOrder={["label", "input", "error", "description"]}
             data-autofocus
             // Select the name without its extension, as file managers do.
             onFocus={(e) => e.currentTarget.setSelectionRange(0, splitExt(e.currentTarget.value)[0].length)}
@@ -56,7 +63,7 @@ export function NameDialog({
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" loading={loading} disabled={!name.trim() || name.trim() === initial}>
+            <Button type="submit" loading={loading} disabled={!name.trim() || (requireChange && name.trim() === initial)}>
               {confirm}
             </Button>
           </Group>

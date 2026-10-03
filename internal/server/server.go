@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -23,6 +25,7 @@ import (
 	"photobag/internal/events"
 	"photobag/internal/experiments"
 	"photobag/internal/files"
+	"photobag/internal/imaging"
 	"photobag/internal/importer"
 	"photobag/internal/jobs"
 	"photobag/internal/reencode"
@@ -83,6 +86,9 @@ type Server struct {
 
 	backupsMu sync.Mutex
 	backups   map[string]*pendingBackup
+
+	tagOnce sync.Once
+	tag     string
 }
 
 type pendingBackup struct {
@@ -125,6 +131,26 @@ func New(b *bag.Bag, cfg Config) *Server {
 		backups: map[string]*pendingBackup{},
 		genJobs: map[int64]string{},
 	}
+}
+
+// bagTag identifies the open bag, and the way images are rendered, in the
+// URLs of images browsers cache for good: an image id in another bag, or in
+// a copy of this one elsewhere on disk, is another picture. The web UI
+// reads it from the page.
+func (s *Server) bagTag() string {
+	s.tagOnce.Do(func() {
+		id, err := s.b.ID(s.ctx)
+		if err != nil {
+			s.log.Warn("could not read the bag's identity; images will not stay cached", "err", err)
+			var r [16]byte
+			rand.Read(r[:])
+			id = hex.EncodeToString(r[:])
+		}
+		where, _ := filepath.Abs(s.b.Path)
+		h := sha256.Sum256(fmt.Appendf(nil, "%s\x00%s\x00%d", id, where, imaging.RenderVersion))
+		s.tag = hex.EncodeToString(h[:6])
+	})
+	return s.tag
 }
 
 // Token returns the per-launch access token.
@@ -177,6 +203,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 	}
 	backup.CleanStale(s.b.Path)
+	s.bagTag() // before any job can keep the bag's writer busy
 	if err := files.Tidy(ctx, s.b); err != nil {
 		s.log.Warn("could not tidy up interrupted file uploads", "err", err)
 	}

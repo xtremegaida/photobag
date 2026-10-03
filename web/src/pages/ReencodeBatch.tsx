@@ -20,7 +20,7 @@ import { notifications } from "@mantine/notifications";
 import { IconCheck, IconPlayerPlay, IconPlayerStop, IconTrash } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { errorMessage, thumbUrl } from "../api/client";
+import { errorMessage, shaThumbUrl, thumbUrl } from "../api/client";
 import { useDecide, useDeleteReencode, useReencode, useResumeReencode, useStopReencode } from "../api/reencode";
 import type { ReencodeItem } from "../api/types";
 import { Confirm } from "../components/Confirm";
@@ -54,7 +54,7 @@ function Tile({
       onClick={onOpen}
     >
       <div className={classes.thumb}>
-        <img src={ready && item.newSha256 ? `/api/thumbs/${item.newSha256}` : thumbUrl(item.imageId)} loading="lazy" alt="" draggable={false} />
+        <img src={ready && item.newSha256 ? shaThumbUrl(item.newSha256) : thumbUrl(item.imageId)} loading="lazy" alt="" draggable={false} />
       </div>
       {ready && (
         <Checkbox

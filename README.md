@@ -167,10 +167,20 @@ documentation, licences, anything that should travel with the library.
   rules as image names, so they export cleanly to Windows and Linux; they
   are unique within a folder ignoring case.
 - **Viewing:** text and code open in the browser (UTF-8, UTF-16 or
-  Windows-1252), Markdown is shown formatted (tables, task lists; relative
-  links and images point into the bag), and images, PDFs, audio and video
-  play in place. Files are served sandboxed: an HTML page or SVG never runs
-  scripts, and HTML is shown as source.
+  Windows-1252) with syntax highlighting and search (Ctrl+F), Markdown is
+  shown formatted (tables, task lists; relative links and images point into
+  the bag), and images, PDFs, audio and video play in place. Files are served
+  sandboxed: an HTML page or SVG never runs scripts, and HTML is shown as
+  source.
+- **Editing:** *Edit* (or E) turns a text file or note (up to 2 MB) into an
+  editor; Markdown shows the formatted note beside it as you type. *Save*
+  writes it back in place (Ctrl+S saves and carries on editing), *Save as
+  copy…* writes a new file beside it and leaves the original alone. Saving
+  keeps the file's encoding and line endings (text Windows-1252 cannot hold
+  is saved as UTF-8, and you are told). If the file changed elsewhere while
+  you were editing, saving asks before replacing that version. *New file*
+  starts an empty note (`.md`) or text file and opens it for typing; leaving
+  a page with unsaved changes asks first.
 - **Getting them out:** download a file, or anything as a zip; or export to a
   folder on the machine, keeping folders and modification times.
 - Identical files are stored once; contents are kept in 1 MB pieces, so large

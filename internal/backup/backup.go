@@ -84,16 +84,21 @@ func To(ctx context.Context, b *bag.Bag, dest string) (*Result, error) {
 	return &Result{Path: dest, Bytes: st.Size(), Millis: time.Since(start).Milliseconds()}, nil
 }
 
+// vacuumInto writes a compacted copy of the bag, with an identity of its
+// own (see bag.Reidentify).
 func vacuumInto(ctx context.Context, b *bag.Bag, dest string) error {
 	db, err := b.OpenAux()
 	if err != nil {
 		// DELETE/exclusive mode: only the writer can read the file.
 		_, err = b.W.ExecContext(ctx, "VACUUM INTO ?", dest)
+	} else {
+		_, err = db.ExecContext(ctx, "VACUUM INTO ?", dest)
+		db.Close()
+	}
+	if err != nil {
 		return err
 	}
-	defer db.Close()
-	_, err = db.ExecContext(ctx, "VACUUM INTO ?", dest)
-	return err
+	return bag.Reidentify(ctx, dest)
 }
 
 // TempPath returns a temporary backup path next to the bag.

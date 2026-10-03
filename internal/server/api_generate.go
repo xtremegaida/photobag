@@ -603,7 +603,20 @@ func (s *Server) generationOriginal(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	data, err := library.BlobData(ctx, s.b, blobID)
+	// Generation ids are used again after a discard, so the browser
+	// revalidates against the content.
+	sha, err := library.BlobSHA(ctx, s.b, blobID)
+	if err != nil {
+		return err
+	}
+	etag := `"` + sha + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return nil
+	}
+	data, err := library.BlobDataBySHA(ctx, s.b, sha)
 	if err != nil {
 		return err
 	}
@@ -615,7 +628,6 @@ func (s *Server) generationOriginal(w http.ResponseWriter, r *http.Request) erro
 	name := fmt.Sprintf("%s %04d", strings.TrimSpace(cmpOr(g.ExperimentName, "ComfyUI")), g.ID)
 	w.Header().Set("Content-Type", f.MIME())
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": exporter.SafeName(name, f)}))
-	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	_, err = w.Write(data)
 	return err

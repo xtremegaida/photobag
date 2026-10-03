@@ -75,30 +75,113 @@ export function gatherInput(list: FileList | File[]): Gathered {
 /** Whether a drag carries files from outside the page. */
 export const hasOsFiles = (dt: DataTransfer | null) => !!dt && [...dt.types].includes("Files");
 
+/** How a text file's bytes were written, so an edit is saved the same way. */
+export type TextEncoding = "utf-8" | "utf-8-bom" | "utf-16le" | "utf-16be" | "windows-1252";
+
+export const encodingLabels: Record<TextEncoding, string> = {
+  "utf-8": "UTF-8",
+  "utf-8-bom": "UTF-8 with BOM",
+  "utf-16le": "UTF-16 LE",
+  "utf-16be": "UTF-16 BE",
+  "windows-1252": "Windows-1252",
+};
+
+export interface DecodedText {
+  text: string;
+  encoding: TextEncoding;
+}
+
 /**
  * Decodes text the way an editor would guess: a byte-order mark decides,
  * then UTF-8 if the bytes are valid UTF-8, else Windows-1252.
  */
-export function decodeText(buf: ArrayBuffer): { text: string; encoding: string } {
+export function decodeText(buf: ArrayBuffer): DecodedText {
   const b = new Uint8Array(buf);
-  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return { text: new TextDecoder("utf-8").decode(b.subarray(3)), encoding: "UTF-8" };
-  if (b[0] === 0xff && b[1] === 0xfe) return { text: new TextDecoder("utf-16le").decode(b.subarray(2)), encoding: "UTF-16" };
-  if (b[0] === 0xfe && b[1] === 0xff) return { text: new TextDecoder("utf-16be").decode(b.subarray(2)), encoding: "UTF-16" };
+  const bomless = { ignoreBOM: true };
+  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) {
+    return { text: new TextDecoder("utf-8", bomless).decode(b.subarray(3)), encoding: "utf-8-bom" };
+  }
+  if (b[0] === 0xff && b[1] === 0xfe) return { text: new TextDecoder("utf-16le", bomless).decode(b.subarray(2)), encoding: "utf-16le" };
+  if (b[0] === 0xfe && b[1] === 0xff) return { text: new TextDecoder("utf-16be", bomless).decode(b.subarray(2)), encoding: "utf-16be" };
   try {
-    return { text: new TextDecoder("utf-8", { fatal: true }).decode(b), encoding: "UTF-8" };
+    return { text: new TextDecoder("utf-8", { fatal: true }).decode(b), encoding: "utf-8" };
   } catch {
     // A cut-off multi-byte character at the end of a partial read is not
     // a reason to give up on UTF-8.
     if (b.length > 4) {
       try {
-        return { text: new TextDecoder("utf-8", { fatal: true }).decode(b.subarray(0, b.length - 3)), encoding: "UTF-8" };
+        return { text: new TextDecoder("utf-8", { fatal: true }).decode(b.subarray(0, b.length - 3)), encoding: "utf-8" };
       } catch {
         // fall through
       }
     }
-    return { text: new TextDecoder("windows-1252").decode(b), encoding: "Windows-1252" };
+    return { text: new TextDecoder("windows-1252").decode(b), encoding: "windows-1252" };
   }
 }
+
+let cp1252: Map<string, number> | undefined;
+
+/** Text as Windows-1252 bytes, or null if it has characters that has not. */
+function toWindows1252(text: string): Uint8Array<ArrayBuffer> | null {
+  if (!cp1252) {
+    // Every byte decodes to its own character, so decoding them all gives
+    // the way back.
+    const chars = new TextDecoder("windows-1252").decode(Uint8Array.from({ length: 256 }, (_, i) => i));
+    cp1252 = new Map([...chars].map((c, i) => [c, i]));
+  }
+  const out = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) {
+    const b = cp1252.get(text[i]);
+    if (b === undefined) return null;
+    out[i] = b;
+  }
+  return out;
+}
+
+function toUTF16(text: string, littleEndian: boolean): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(2 + text.length * 2);
+  const v = new DataView(out.buffer);
+  v.setUint16(0, 0xfeff, littleEndian);
+  for (let i = 0; i < text.length; i++) v.setUint16(2 + i * 2, text.charCodeAt(i), littleEndian);
+  return out;
+}
+
+/**
+ * Encodes text as it was read. Text Windows-1252 cannot hold is stored as
+ * UTF-8 instead; the encoding returned says which was used.
+ */
+export function encodeText(text: string, encoding: TextEncoding): { bytes: Uint8Array<ArrayBuffer>; encoding: TextEncoding } {
+  switch (encoding) {
+    case "utf-16le":
+    case "utf-16be":
+      return { bytes: toUTF16(text, encoding === "utf-16le"), encoding };
+    case "windows-1252": {
+      const bytes = toWindows1252(text);
+      if (bytes) return { bytes, encoding };
+      break;
+    }
+    case "utf-8-bom": {
+      const body = new TextEncoder().encode(text);
+      const bytes = new Uint8Array(body.length + 3);
+      bytes.set([0xef, 0xbb, 0xbf]);
+      bytes.set(body, 3);
+      return { bytes, encoding };
+    }
+  }
+  return { bytes: new TextEncoder().encode(text), encoding: "utf-8" };
+}
+
+export type LineEnding = "\n" | "\r\n";
+
+/** The line ending a text mostly uses (LF when it has no line breaks). */
+export function lineEnding(text: string): LineEnding {
+  const crlf = text.match(/\r\n/g)?.length ?? 0;
+  const lf = (text.match(/\n/g)?.length ?? 0) - crlf;
+  return crlf > lf ? "\r\n" : "\n";
+}
+
+/** Text with LF line breaks (as an editor holds it) given another ending. */
+export const withLineEnding = (text: string, eol: LineEnding) => (eol === "\n" ? text : text.replace(/\n/g, eol));
 
 /**
  * Resolves a link in a note at notePath ("docs/guide.md") against the

@@ -30,5 +30,9 @@ export function FilesPage() {
     );
   }
   if (!data) return null;
-  return data.node && !data.node.dir ? <FileViewer listing={data} path={path} /> : <FileBrowser listing={data} path={path} />;
+  return data.node && !data.node.dir ? (
+    <FileViewer key={data.node.id} listing={data} path={path} />
+  ) : (
+    <FileBrowser listing={data} path={path} />
+  );
 }

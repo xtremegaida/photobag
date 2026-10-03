@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createBatcher } from "../api/batcher";
+import { tagged } from "../api/client";
 import type { ReencodeItem } from "../api/types";
-import { decodeText, isClutter, resolveNoteLink, splitExt } from "./files";
+import { decodeText, encodeText, isClutter, lineEnding, resolveNoteLink, splitExt, withLineEnding } from "./files";
 import { DEFAULT_REENCODE, defaultMode, describeReencode, pickItems, psnrLabel, sizeChange } from "./reencode";
 import { formatBytes, formatTaken, percent } from "./format";
 import type { AnalysisSettings, TaggerStatus } from "../api/types";
@@ -281,9 +282,9 @@ describe("slide decks", () => {
     expect(fadeMillis({ ...DEFAULT_SETTINGS, crossfade: false })).toBe(0);
   });
   it("shows originals where they animate or have transparency", () => {
-    expect(slideSource({ id: 7, format: "gif", size: 5 << 20 }, 3000)).toBe("/api/images/7/original");
-    expect(slideSource({ id: 7, format: "png", size: 90 << 20 }, 3000)).toBe("/api/images/7/preview?size=2560");
-    expect(slideSource({ id: 7, format: "jpeg", size: 1000 }, 1200)).toBe("/api/images/7/preview?size=1600");
+    expect(slideSource({ id: 7, format: "gif", size: 5 << 20 }, 3000)).toBe(tagged("/api/images/7/original"));
+    expect(slideSource({ id: 7, format: "png", size: 90 << 20 }, 3000)).toBe(tagged("/api/images/7/preview?size=2560"));
+    expect(slideSource({ id: 7, format: "jpeg", size: 1000 }, 1200)).toBe(tagged("/api/images/7/preview?size=1600"));
   });
   it("links slideshows", () => {
     expect(slideshowPath({ deck: 4, start: 3 })).toBe("/slideshow?deck=4&start=3");
@@ -303,14 +304,46 @@ describe("files", () => {
   });
   it("guesses text encodings", () => {
     const enc = (s: string) => new TextEncoder().encode(s).buffer;
-    expect(decodeText(enc("héllo"))).toEqual({ text: "héllo", encoding: "UTF-8" });
-    expect(decodeText(new Uint8Array([0xef, 0xbb, 0xbf, 0x68, 0x69]).buffer)).toEqual({ text: "hi", encoding: "UTF-8" });
-    expect(decodeText(new Uint8Array([0xff, 0xfe, 0x68, 0x00, 0x69, 0x00]).buffer)).toEqual({ text: "hi", encoding: "UTF-16" });
-    expect(decodeText(new Uint8Array([0x63, 0x61, 0x66, 0xe9]).buffer)).toEqual({ text: "café", encoding: "Windows-1252" });
+    expect(decodeText(enc("héllo"))).toEqual({ text: "héllo", encoding: "utf-8" });
+    expect(decodeText(new Uint8Array([0xef, 0xbb, 0xbf, 0x68, 0x69]).buffer)).toEqual({ text: "hi", encoding: "utf-8-bom" });
+    expect(decodeText(new Uint8Array([0xff, 0xfe, 0x68, 0x00, 0x69, 0x00]).buffer)).toEqual({ text: "hi", encoding: "utf-16le" });
+    expect(decodeText(new Uint8Array([0xfe, 0xff, 0x00, 0x68, 0x00, 0x69]).buffer)).toEqual({ text: "hi", encoding: "utf-16be" });
+    expect(decodeText(new Uint8Array([0x63, 0x61, 0x66, 0xe9]).buffer)).toEqual({ text: "café", encoding: "windows-1252" });
     // A multi-byte character cut off by a partial read stays UTF-8.
     const cut = new Uint8Array([...new TextEncoder().encode("abcdefé")].slice(0, -1));
-    expect(decodeText(cut.buffer).encoding).toBe("UTF-8");
+    expect(decodeText(cut.buffer).encoding).toBe("utf-8");
   });
+
+  it("saves text the way it was read", () => {
+    const bytes = (b: Uint8Array) => [...b];
+    for (const [text, encoding] of [
+      ["héllo €", "utf-8"],
+      ["héllo €", "utf-8-bom"],
+      ["héllo € 😀", "utf-16le"],
+      ["héllo € 😀", "utf-16be"],
+      ["café “quoted” \u0081", "windows-1252"],
+    ] as const) {
+      const out = encodeText(text, encoding);
+      expect(out.encoding).toBe(encoding);
+      expect(decodeText(out.bytes.slice().buffer)).toEqual({ text, encoding });
+    }
+    expect(bytes(encodeText("hi", "utf-8-bom").bytes)).toEqual([0xef, 0xbb, 0xbf, 0x68, 0x69]);
+    expect(bytes(encodeText("hi", "utf-16be").bytes)).toEqual([0xfe, 0xff, 0x00, 0x68, 0x00, 0x69]);
+    expect(bytes(encodeText("café", "windows-1252").bytes)).toEqual([0x63, 0x61, 0x66, 0xe9]);
+    // What Windows-1252 cannot hold goes out as UTF-8.
+    const wide = encodeText("café ✓", "windows-1252");
+    expect(wide.encoding).toBe("utf-8");
+    expect(decodeText(wide.bytes.slice().buffer).text).toBe("café ✓");
+  });
+
+  it("keeps line endings", () => {
+    expect(lineEnding("a\r\nb\r\nc\n")).toBe("\r\n");
+    expect(lineEnding("a\nb\r\nc\n")).toBe("\n");
+    expect(lineEnding("no breaks")).toBe("\n");
+    expect(withLineEnding("a\nb\n", "\r\n")).toBe("a\r\nb\r\n");
+    expect(withLineEnding("a\nb", "\n")).toBe("a\nb");
+  });
+
   it("splits names and spots clutter", () => {
     expect(splitExt("notes.final.md")).toEqual(["notes.final", ".md"]);
     expect(splitExt(".gitignore")).toEqual([".gitignore", ""]);

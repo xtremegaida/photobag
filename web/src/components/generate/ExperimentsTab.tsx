@@ -4,7 +4,7 @@ import { IconFlask, IconPlus } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { api, errorMessage } from "../../api/client";
+import { api, errorMessage, shaThumbUrl } from "../../api/client";
 import { useExperiments } from "../../api/generate";
 import { invalidateTopics } from "../../api/hooks";
 import type { ExperimentView, GenerateRequest } from "../../api/types";
@@ -70,7 +70,7 @@ function Covers({ shas }: { shas: string[] }) {
   return (
     <SimpleGrid cols={shas.length === 1 ? 1 : 2} spacing={2} h={120} style={{ overflow: "hidden" }}>
       {shas.slice(0, shas.length === 3 ? 2 : 4).map((s) => (
-        <Image key={s} src={`/api/thumbs/${s}`} h={shas.length > 2 ? 59 : 120} fit="cover" alt="" />
+        <Image key={s} src={shaThumbUrl(s)} h={shas.length > 2 ? 59 : 120} fit="cover" alt="" />
       ))}
     </SimpleGrid>
   );

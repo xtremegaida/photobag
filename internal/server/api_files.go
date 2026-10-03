@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"photobag/internal/exporter"
@@ -26,6 +27,7 @@ func (s *Server) fileRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/files/move", s.moveFiles)
 	s.handle(mux, "POST /api/files/delete", s.deleteFiles)
 	s.handle(mux, "GET /api/files/{id}/content", s.fileContent)
+	s.handle(mux, "PUT /api/files/{id}/content", s.saveFile)
 	s.handle(mux, "GET /api/files-raw/{path...}", s.fileByPath)
 	s.handle(mux, "GET /api/files/zip", s.zipFiles)
 	s.handle(mux, "POST /api/jobs/files-import", s.startFilesImport)
@@ -150,10 +152,8 @@ func (s *Server) uploadFile(w http.ResponseWriter, r *http.Request) error {
 			return ok(w, files.PutResult{Outcome: files.Skipped})
 		}
 	}
-	if r.ContentLength > 0 {
-		if free, err := sysutil.DiskFree(filepath.Dir(s.b.Path)); err == nil && uint64(r.ContentLength)+64<<20 > free {
-			return apiErr(http.StatusInsufficientStorage, "not enough disk space for this file (%s free)", humanSize(int64(free)))
-		}
+	if err := s.roomFor(r); err != nil {
+		return err
 	}
 	res, err := files.Store(ctx, s.b, r.Body, opts)
 	if err != nil {
@@ -161,6 +161,39 @@ func (s *Server) uploadFile(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.events.Changed("files")
 	return ok(w, res)
+}
+
+// roomFor refuses a request body the bag's disk has no room for.
+func (s *Server) roomFor(r *http.Request) error {
+	if r.ContentLength > 0 {
+		if free, err := sysutil.DiskFree(filepath.Dir(s.b.Path)); err == nil && uint64(r.ContentLength)+64<<20 > free {
+			return apiErr(http.StatusInsufficientStorage, "not enough disk space for this file (%s free)", humanSize(int64(free)))
+		}
+	}
+	return nil
+}
+
+// saveFile replaces a file's content with the request body (an edit saved
+// in place). If-Match: "<sha256>" makes it refuse, with 412, when the file
+// has changed since that version.
+func (s *Server) saveFile(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r, "id")
+	if err != nil {
+		return err
+	}
+	if err := s.roomFor(r); err != nil {
+		return err
+	}
+	ifSHA := strings.Trim(strings.TrimPrefix(r.Header.Get("If-Match"), "W/"), `" `)
+	if ifSHA == "*" {
+		ifSHA = ""
+	}
+	n, err := files.Overwrite(r.Context(), s.b, id, r.Body, ifSHA)
+	if err != nil {
+		return err
+	}
+	s.events.Changed("files")
+	return ok(w, n)
 }
 
 func humanSize(n int64) string {

@@ -152,9 +152,10 @@ func (s *Server) static() http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		page := strings.Replace(string(index), "<head>", `<head><meta name="photobag-bag" content="`+s.bagTag()+`">`, 1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
-		w.Write(index)
+		io.WriteString(w, page)
 	})
 }
 
@@ -190,6 +191,8 @@ func writeError(w http.ResponseWriter, err error) {
 		status = ae.status
 	case errors.Is(err, library.ErrNotFound), errors.Is(err, scoring.ErrNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, files.ErrChanged):
+		status = http.StatusPreconditionFailed
 	case errors.Is(err, scoring.ErrConflict), errors.Is(err, experiments.ErrConflict), errors.Is(err, decks.ErrConflict),
 		errors.Is(err, files.ErrConflict),
 		errors.Is(err, reencode.ErrBusy):
@@ -240,7 +243,9 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusOK)
 	ch, unsub := s.events.Subscribe()
 	defer unsub()
-	fmt.Fprint(w, "retry: 2000\n: connected\n\n")
+	// The bag's tag lets a page left open while another bag was served
+	// on the same address notice and reload.
+	fmt.Fprintf(w, "retry: 2000\ndata: {\"type\":\"hello\",\"data\":{\"bag\":%q}}\n\n", s.bagTag())
 	if err := rc.Flush(); err != nil {
 		return nil
 	}

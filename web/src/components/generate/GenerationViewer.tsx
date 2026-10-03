@@ -13,6 +13,7 @@ const SIZE = window.devicePixelRatio > 1.5 || window.innerWidth > 1800 ? 2560 : 
 /** Full-screen viewer for an experiment's images; ←/→ to browse. */
 export function GenerationViewer({
   ids,
+  shas,
   index,
   onIndex,
   onClose,
@@ -20,6 +21,8 @@ export function GenerationViewer({
   count,
 }: {
   ids: number[];
+  /** The content of each generation, which versions its image URLs. */
+  shas: Map<number, string>;
   index: number | null;
   onIndex: (i: number) => void;
   onClose: () => void;
@@ -46,9 +49,9 @@ export function GenerationViewer({
     if (!open) return;
     for (const d of [1, -1]) {
       const n = ids[index! + d];
-      if (n) preload(generationPreview(n, SIZE));
+      if (n) preload(generationPreview({ id: n, sha256: shas.get(n) }, SIZE));
     }
-  }, [open, index, ids]);
+  }, [open, index, ids, shas]);
   // After a move or delete the list shrinks: stay at the same place.
   const gone = () => {
     if (ids.length <= 1) onClose();
@@ -59,7 +62,7 @@ export function GenerationViewer({
       {id !== undefined && (
         <div className={classes.root}>
           <div className={classes.stage} onClick={(e) => e.target === e.currentTarget && onClose()}>
-            <img key={id} src={generationPreview(id, SIZE)} alt="" />
+            <img key={id} src={generationPreview({ id, sha256: shas.get(id) }, SIZE)} alt="" />
             <span className={classes.counter}>
               {index! + 1} / {ids.length}
             </span>

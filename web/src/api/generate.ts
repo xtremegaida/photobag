@@ -1,6 +1,6 @@
 // Queries and mutations for image generation with ComfyUI.
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./client";
+import { api, shaThumbUrl, tagged, versioned } from "./client";
 import { invalidateTopics } from "./hooks";
 import type {
   ComfyNodes,
@@ -31,10 +31,12 @@ export const gk = {
   plan: (id: number, r: GenerateRequest) => ["gen-plan", id, r] as const,
 };
 
-export const generationThumb = (g: Pick<Generation, "sha256">) => `/api/thumbs/${g.sha256}`;
-export const generationPreview = (id: number, size = 1600) => `/api/generations/${id}/preview?size=${size}`;
-export const generationOriginal = (id: number, download = false) =>
-  `/api/generations/${id}/original${download ? "?download=1" : ""}`;
+export const generationThumb = (g: Pick<Generation, "sha256">) => shaThumbUrl(g.sha256);
+type GenerationRef = Pick<Generation, "id"> & { sha256?: string };
+export const generationPreview = (g: GenerationRef, size = 1600) =>
+  tagged(versioned(`/api/generations/${g.id}/preview?size=${size}`, g.sha256));
+export const generationOriginal = (g: GenerationRef, download = false) =>
+  tagged(versioned(`/api/generations/${g.id}/original${download ? "?download=1" : ""}`, g.sha256));
 export const generationWorkflowUrl = (id: number) => `/api/generations/${id}/workflow?download=1`;
 
 export function useComfySettings() {

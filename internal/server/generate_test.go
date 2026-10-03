@@ -185,6 +185,56 @@ func TestGenerateAPI(t *testing.T) {
 	if discarded.Discarded != 1 || saved.Workflow.Name != "Five steps" {
 		t.Errorf("discard %+v, saved %+v", discarded, saved)
 	}
+	// Discarding the newest generation and generating again reuses its id
+	// (and its blob's): the preview must not come from what was cached for
+	// the image discarded.
+	last := gens[2]
+	for _, g := range gens {
+		if g.ID > last.ID {
+			last = g
+		}
+	}
+	getPreview := func(id int64, etag string) (*http.Response, []byte) {
+		t.Helper()
+		r, _ := http.NewRequest("GET", c.base+"/api/generations/"+itoa(id)+"/preview?size=800", nil)
+		if etag != "" {
+			r.Header.Set("If-None-Match", etag)
+		}
+		res, err := c.http.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		data, _ := io.ReadAll(res.Body)
+		return res, data
+	}
+	before, oldData := getPreview(last.ID, "")
+	if last.ImageID != 0 || last.ID == gens[1].ID {
+		t.Fatalf("the newest generation %+v is not the one left", last)
+	}
+	c.do("POST", "/api/generations/discard", map[string]any{"ids": []int64{last.ID}}, nil)
+	// Two new ones: the second takes the discarded id (the first fills the
+	// gap of the one discarded before).
+	again := map[string]any{"request": map[string]any{"workflowId": wf.Workflow.ID, "count": 1,
+		"overrides": []any{map[string]any{"node": "KSampler", "input": "seed", "sweep": map[string]any{"range": map[string]any{"from": 777, "to": 778, "step": 1}}}}}}
+	c.do("POST", "/api/experiments/"+itoa(exp.ID)+"/generate", again, &job)
+	if job = c.waitJob(job.ID); job.Status != jobs.Done {
+		t.Fatalf("job %+v", job)
+	}
+	c.do("GET", "/api/experiments/"+itoa(exp.ID)+"/generations", nil, &gens)
+	var reused bool
+	for _, g := range gens {
+		if g.ID == last.ID && g.SHA256 != last.SHA256 {
+			reused = true
+		}
+	}
+	if !reused {
+		t.Fatalf("generation id %d was not used again: %+v", last.ID, gens)
+	}
+	if res, data := getPreview(last.ID, before.Header.Get("ETag")); res.StatusCode != 200 || string(data) == string(oldData) {
+		t.Errorf("preview of a reused id: %d, same picture %v", res.StatusCode, string(data) == string(oldData))
+	}
+
 	if st := c.do("DELETE", "/api/experiments/"+itoa(exp.ID), nil, nil); st != 200 {
 		t.Errorf("delete: %d", st)
 	}

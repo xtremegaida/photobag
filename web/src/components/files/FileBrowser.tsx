@@ -22,6 +22,7 @@ import {
   IconDownload,
   IconFileExport,
   IconFileImport,
+  IconFilePlus,
   IconFolderPlus,
   IconFolderUp,
   IconPencil,
@@ -37,6 +38,7 @@ import { Link, useNavigate } from "react-router";
 import { api, errorMessage } from "../../api/client";
 import {
   checkExisting,
+  createFile,
   fileContentUrl,
   filesRoute,
   joinPath,
@@ -117,7 +119,9 @@ export function FileBrowser({ listing, path }: { listing: FileListing; path: str
   }, [children]);
   const chosen = rows.filter((n) => selected.has(n.id));
 
-  const [naming, setNaming] = useState<"new" | FileNode | null>(null);
+  // A name being asked for: a new folder's, a new file's, or something's new name.
+  const [naming, setNaming] = useState<"folder" | "file" | FileNode | null>(null);
+  const [creating, setCreating] = useState(false);
   const [nameError, setNameError] = useState<string>();
   const [moving, setMoving] = useState<FileNode[] | null>(null);
   const [deleting, setDeleting] = useState<FileNode[] | null>(null);
@@ -296,14 +300,24 @@ export function FileBrowser({ listing, path }: { listing: FileListing; path: str
   const submitName = (name: string) => {
     setNameError(undefined);
     const done = { onError: (e: unknown) => setNameError(errorMessage(e)) };
-    if (naming === "new") {
+    if (naming === "folder") {
       makeFolder.mutate({ parent: folderId, name }, { ...done, onSuccess: () => setNaming(null) });
+    } else if (naming === "file") {
+      // An empty file, opened ready for typing.
+      setCreating(true);
+      createFile(folderId, name)
+        .then((r) => {
+          invalidateTopics(qc, ["files"]);
+          setNaming(null);
+          navigate(filesRoute(joinPath([path, r.node!.name])), { state: { edit: true } });
+        }, done.onError)
+        .finally(() => setCreating(false));
     } else if (naming) {
       rename.mutate({ id: naming.id, name }, { ...done, onSuccess: () => setNaming(null) });
     }
   };
   const downloadNodes = (nodes: FileNode[]) => {
-    if (nodes.length === 1 && !nodes[0].dir) download(fileContentUrl(nodes[0].id, true));
+    if (nodes.length === 1 && !nodes[0].dir) download(fileContentUrl(nodes[0], true));
     else download(zipUrl(nodes.map((n) => n.id)));
   };
 
@@ -366,7 +380,10 @@ export function FileBrowser({ listing, path }: { listing: FileListing; path: str
             </Text>
           </Stack>
           <Group gap="xs">
-            <Button variant="default" leftSection={<IconFolderPlus size={16} />} onClick={() => setNaming("new")}>
+            <Button variant="default" leftSection={<IconFilePlus size={16} />} onClick={() => setNaming("file")}>
+              New file
+            </Button>
+            <Button variant="default" leftSection={<IconFolderPlus size={16} />} onClick={() => setNaming("folder")}>
               New folder
             </Button>
             <Menu position="bottom-end">
@@ -443,7 +460,7 @@ export function FileBrowser({ listing, path }: { listing: FileListing; path: str
           mt="xl"
           icon={<IconCloudUpload size={40} />}
           title={folder ? "This folder is empty" : "No files yet"}
-          description="Drop files or whole folders here, or use Upload. Text files and notes open right here in the browser."
+          description="Drop files or whole folders here, or use Upload. Text files and notes open (and can be edited) right here in the browser."
         />
       ) : (
         <ScrollArea style={{ flex: 1 }} px="md">
@@ -542,10 +559,20 @@ export function FileBrowser({ listing, path }: { listing: FileListing; path: str
 
       <NameDialog
         opened={naming !== null}
-        title={naming === "new" ? `New folder in ${folderName}` : `Rename “${naming?.name ?? ""}”`}
-        initial={naming === "new" ? "" : (naming?.name ?? "")}
-        confirm={naming === "new" ? "Create" : "Rename"}
-        loading={makeFolder.isPending || rename.isPending}
+        title={
+          naming === "folder"
+            ? `New folder in ${folderName}`
+            : naming === "file"
+              ? `New file in ${folderName}`
+              : `Rename “${naming?.name ?? ""}”`
+        }
+        initial={naming === "folder" ? "" : naming === "file" ? "Untitled.md" : (naming?.name ?? "")}
+        requireChange={typeof naming === "object"}
+        description={
+          naming === "file" ? "The ending decides how it shows: .md for a formatted note, .txt for plain text." : undefined
+        }
+        confirm={typeof naming === "object" ? "Rename" : "Create"}
+        loading={makeFolder.isPending || rename.isPending || creating}
         error={nameError}
         onSubmit={submitName}
         onClose={() => {

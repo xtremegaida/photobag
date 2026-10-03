@@ -18,6 +18,20 @@ import (
 	"photobag/internal/jobs"
 )
 
+// l0 is the first folder at the top level.
+func l0(c *client, t *testing.T) files.Node {
+	t.Helper()
+	var l files.Listing
+	c.do("GET", "/api/files", nil, &l)
+	for _, n := range l.Children {
+		if n.Dir {
+			return n
+		}
+	}
+	t.Fatal("no folder")
+	return files.Node{}
+}
+
 func TestFilesAPI(t *testing.T) {
 	dir := t.TempDir()
 	b, err := bag.Open(filepath.Join(dir, "f.photobag"), bag.Options{})
@@ -79,6 +93,42 @@ func TestFilesAPI(t *testing.T) {
 		t.Errorf("skip: %d %+v", st, up)
 	}
 	_, page := upload(0, "notes/page.html", "<script>alert(1)</script>", "")
+	if st, _ := upload(0, "notes/PAGE.html", "x", files.ConflictFail); st != http.StatusConflict {
+		t.Errorf("fail on conflict: %d", st)
+	}
+
+	// Saving an edit in place: refused (412) when the file is no longer the
+	// version the edit started from.
+	save := func(id int64, body, ifSHA string) (int, files.Node) {
+		t.Helper()
+		req, _ := http.NewRequest("PUT", c.base+"/api/files/"+strconv.FormatInt(id, 10)+"/content", strings.NewReader(body))
+		if ifSHA != "" {
+			req.Header.Set("If-Match", `"`+ifSHA+`"`)
+		}
+		res, err := c.http.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var n files.Node
+		json.NewDecoder(res.Body).Decode(&n)
+		return res.StatusCode, n
+	}
+	_, draft := upload(0, "notes/draft.txt", "one", "")
+	st, edited := save(draft.Node.ID, "two", draft.Node.SHA256)
+	if st != 200 || edited.ID != draft.Node.ID || edited.Name != "draft.txt" || edited.Size != 3 || edited.SHA256 == draft.Node.SHA256 {
+		t.Errorf("save: %d %+v", st, edited)
+	}
+	if st, _ := save(draft.Node.ID, "three", draft.Node.SHA256); st != http.StatusPreconditionFailed {
+		t.Errorf("stale save: %d", st)
+	}
+	if st, n := save(draft.Node.ID, "three", ""); st != 200 || n.Size != 5 {
+		t.Errorf("unconditional save: %d %+v", st, n)
+	}
+	if st, _ := save(l0(c, t).ID, "x", ""); st != http.StatusBadRequest {
+		t.Errorf("saving a folder: %d", st)
+	}
+	c.do("POST", "/api/files/delete", map[string]any{"ids": []int64{draft.Node.ID}}, nil)
 
 	var l files.Listing
 	if st := c.do("GET", "/api/files?path=notes", nil, &l); st != 200 || len(l.Children) != 2 || len(l.Path) != 1 {

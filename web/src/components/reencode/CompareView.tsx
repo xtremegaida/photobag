@@ -272,12 +272,12 @@ export function CompareView({
     ready && mode === "side" ? (
       <div ref={panesRef} className={classes.panes}>
         <Pane src={originalViewUrl(it.imageId)} label={originalLabel} aspect={aspect} pixelWidth={it.oldWidth} view={view} onView={setView} />
-        <Pane src={resultUrl(batch, it.imageId)} label={resultLabel} aspect={aspect} pixelWidth={it.newWidth!} view={view} onView={setView} />
+        <Pane src={resultUrl(batch, it)} label={resultLabel} aspect={aspect} pixelWidth={it.newWidth!} view={view} onView={setView} />
       </div>
     ) : ready ? (
       <div ref={panesRef} className={classes.panes} data-single>
         <Pane
-          src={flipped ? originalViewUrl(it.imageId) : resultUrl(batch, it.imageId)}
+          src={flipped ? originalViewUrl(it.imageId) : resultUrl(batch, it)}
           label={flipped ? originalLabel : resultLabel}
           aspect={aspect}
           pixelWidth={flipped ? it.oldWidth : it.newWidth!}

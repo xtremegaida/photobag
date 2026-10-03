@@ -64,6 +64,29 @@ func (c *client) waitJob(id string) jobs.Job {
 	return j
 }
 
+func TestBagTag(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{KeyStore: filepath.Join(dir, "credentials.json"), TaggerDir: filepath.Join(dir, "tagger")}
+	tag := func(name string) string {
+		t.Helper()
+		b, err := bag.Open(filepath.Join(dir, name), bag.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer b.Close()
+		s := New(b, cfg)
+		defer s.cancel()
+		return s.bagTag()
+	}
+	a := tag("a.photobag")
+	if len(a) != 12 || tag("a.photobag") != a {
+		t.Errorf("tag %q is not stable", a)
+	}
+	if tag("b.photobag") == a {
+		t.Error("two bags share a tag")
+	}
+}
+
 func TestServerEndToEnd(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "photos")
@@ -174,6 +197,22 @@ func TestServerEndToEnd(t *testing.T) {
 		if res.StatusCode != 200 || n == 0 {
 			t.Errorf("GET %s: %d (%d bytes)", p, res.StatusCode, n)
 		}
+	}
+	// Previews are validated by content, not by ids that can be used again.
+	var detail struct {
+		Image struct {
+			SHA256 string `json:"sha256"`
+		} `json:"image"`
+	}
+	c.do("GET", "/api/images/"+itoa(ids.IDs[0]), nil, &detail)
+	im := detail.Image
+	pres, err := c.http.Get(base + "/api/images/" + itoa(ids.IDs[0]) + "/preview?size=800")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pres.Body.Close()
+	if etag := pres.Header.Get("ETag"); im.SHA256 == "" || !strings.HasPrefix(etag, `"`+im.SHA256+"-800-") {
+		t.Errorf("preview ETag %s for sha %s", etag, im.SHA256)
 	}
 
 	// Scoring over the API: answer everything with a fixed preference.

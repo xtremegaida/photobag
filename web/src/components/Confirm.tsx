@@ -7,6 +7,7 @@ export function Confirm({
   title,
   children,
   confirm,
+  cancel = "Cancel",
   color = "red",
   loading,
   onConfirm,
@@ -16,6 +17,7 @@ export function Confirm({
   title: ReactNode;
   children?: ReactNode;
   confirm: string;
+  cancel?: string;
   color?: string;
   loading?: boolean;
   onConfirm: () => void;
@@ -27,7 +29,7 @@ export function Confirm({
         {children}
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
-            Cancel
+            {cancel}
           </Button>
           <Button color={color} onClick={onConfirm} loading={loading} data-autofocus>
             {confirm}

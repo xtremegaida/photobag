@@ -153,6 +153,7 @@ export function ExperimentPage() {
     for (const g of gens ?? []) byRun.set(g.runId ?? 0, [...(byRun.get(g.runId ?? 0) ?? []), g.id]);
     return [...(runs ?? []).flatMap((r) => byRun.get(r.id) ?? []), ...(byRun.get(0) ?? [])];
   }, [gens, runs]);
+  const shas = useMemo(() => new Map((gens ?? []).map((g) => [g.id, g.sha256])), [gens]);
   const heldIds = useMemo(() => new Set((gens ?? []).filter((g) => !g.imageId).map((g) => g.id)), [gens]);
   useEffect(() => {
     setSelected((s) => {
@@ -257,7 +258,7 @@ export function ExperimentPage() {
           </Stack>
         </ScrollArea>
       )}
-      <GenerationViewer ids={order} index={open} onIndex={setOpen} onClose={() => setOpen(null)} onUse={loadRequest} count={draft.count} />
+      <GenerationViewer ids={order} shas={shas} index={open} onIndex={setOpen} onClose={() => setOpen(null)} onUse={loadRequest} count={draft.count} />
       <MoveDialog ids={moving} onClose={() => setMoving(null)} onMoved={() => setSelected(new Set())} />
       <Confirm
         opened={!!discarding}

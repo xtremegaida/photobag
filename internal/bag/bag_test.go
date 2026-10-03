@@ -65,6 +65,43 @@ func TestCreateSetsLayoutPragmas(t *testing.T) {
 	b.Close()
 }
 
+func TestIdentity(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "id.photobag")
+	b, err := Open(path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := b.ID(ctx)
+	if again, _ := b.ID(ctx); err != nil || len(id) != 32 || again != id {
+		t.Fatalf("id %q %q %v", id, again, err)
+	}
+	b.Close()
+	b, err = Open(path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := b.ID(ctx); again != id {
+		t.Errorf("identity changed on reopening: %q", again)
+	}
+	copyPath := path + ".copy"
+	if _, err := b.W.ExecContext(ctx, "VACUUM INTO ?", copyPath); err != nil {
+		t.Fatal(err)
+	}
+	b.Close()
+	if err := Reidentify(ctx, copyPath); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Open(copyPath, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if other, _ := c.ID(ctx); other == id || len(other) != 32 {
+		t.Errorf("copy identity %q (source %q)", other, id)
+	}
+}
+
 func TestRefusesForeignDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "other.db")
 	db, err := sql.Open("sqlite", path)

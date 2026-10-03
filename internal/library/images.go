@@ -282,6 +282,30 @@ func Thumb(ctx context.Context, b *bag.Bag, shaHex string) ([]byte, error) {
 	return data, err
 }
 
+// BlobSHA returns a blob's sha256 in hex.
+func BlobSHA(ctx context.Context, b *bag.Bag, blobID int64) (string, error) {
+	var sha []byte
+	err := b.R.QueryRowContext(ctx, "SELECT sha256 FROM blobs WHERE id = ?", blobID).Scan(&sha)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return hex.EncodeToString(sha), err
+}
+
+// BlobDataBySHA loads blob bytes by their sha256 (hex).
+func BlobDataBySHA(ctx context.Context, b *bag.Bag, shaHex string) ([]byte, error) {
+	sha, err := hex.DecodeString(shaHex)
+	if err != nil || len(sha) != 32 {
+		return nil, ErrNotFound
+	}
+	var data []byte
+	err = b.R.QueryRowContext(ctx, "SELECT data FROM blobs WHERE sha256 = ?", sha).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return data, err
+}
+
 // ThumbByID returns the thumbnail JPEG of an image.
 func ThumbByID(ctx context.Context, b *bag.Bag, id int64) ([]byte, error) {
 	var data []byte

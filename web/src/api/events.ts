@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useJobStore } from "../stores/jobs";
-import { api } from "./client";
+import { api, bagTag } from "./client";
 import { invalidateTopics } from "./hooks";
 import type { BackupDownload, Job } from "./types";
 
@@ -68,7 +68,12 @@ export function useServerEvents() {
       es.onerror = () => useJobStore.getState().setConnected(false);
       es.onmessage = (m) => {
         const ev = JSON.parse(m.data) as { type: string; data: unknown };
-        if (ev.type === "job") {
+        if (ev.type === "hello") {
+          // Another bag is served at this address now: start afresh, or
+          // this page would show its images under the old bag's ids.
+          const bag = (ev.data as { bag: string }).bag;
+          if (!bagTag.startsWith("dev-") && bag !== bagTag) window.location.reload();
+        } else if (ev.type === "job") {
           const job = ev.data as Job;
           const prev = useJobStore.getState().jobs[job.id];
           useJobStore.getState().upsert(job);

@@ -236,7 +236,7 @@ export function GenerationInfo({
           </ActionIcon>
         </Tooltip>
         <Tooltip label="Download the image (PNGs carry the workflow: drop them on ComfyUI)">
-          <ActionIcon component="a" href={generationOriginal(g.id, true)} variant="light" size="lg" aria-label="Download image">
+          <ActionIcon component="a" href={generationOriginal(g, true)} variant="light" size="lg" aria-label="Download image">
             <IconDownload size={16} />
           </ActionIcon>
         </Tooltip>

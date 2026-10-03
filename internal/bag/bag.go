@@ -5,7 +5,9 @@ package bag
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -203,6 +205,9 @@ func (b *Bag) init(opts Options) error {
 			if _, err := b.W.ExecContext(ctx, "VACUUM INTO ?", dest); err != nil {
 				return fmt.Errorf("pre-migration backup: %w", err)
 			}
+			if err := Reidentify(ctx, dest); err != nil {
+				return fmt.Errorf("pre-migration backup: %w", err)
+			}
 		}
 		if err := b.migrate(ctx, int(version)); err != nil {
 			return err
@@ -326,6 +331,42 @@ func (b *Bag) Meta(ctx context.Context, key string) (string, error) {
 		return "", nil
 	}
 	return v, err
+}
+
+// ID returns the bag's identity: a random value made the first time it is
+// asked for. Browsers' caches are keyed by it, so an image id in one bag is
+// never mistaken for the same id in another.
+func (b *Bag) ID(ctx context.Context) (string, error) {
+	id, err := b.Meta(ctx, "uid")
+	if err != nil || id != "" {
+		return id, err
+	}
+	err = b.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO meta(key, value) VALUES ('uid', ?)", newID()); err != nil {
+			return err
+		}
+		return tx.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = 'uid'").Scan(&id)
+	})
+	return id, err
+}
+
+func newID() string {
+	var r [16]byte
+	rand.Read(r[:])
+	return hex.EncodeToString(r[:])
+}
+
+// Reidentify gives the bag file at path, a copy nothing else has open, an
+// identity of its own: a backup restored in place of its source, then
+// changed, must not be taken for the source by caches.
+func Reidentify(ctx context.Context, path string) error {
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(10000)")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.ExecContext(ctx, "UPDATE meta SET value = ? WHERE key = 'uid'", newID())
+	return err
 }
 
 // SetMeta stores a meta value.
