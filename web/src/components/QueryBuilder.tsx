@@ -1,9 +1,10 @@
-import { Group, MultiSelect, SegmentedControl, Stack, Text, TextInput } from "@mantine/core";
+import { Group, MultiSelect, SegmentedControl, Select, Stack, Text, TextInput } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { useEffect, useMemo, useState } from "react";
 import { useCount } from "../api/hooks";
 import type { ImageQuery } from "../api/types";
 import { plural } from "../lib/format";
+import { IMAGE_FORMATS, MIN_SIZES } from "../lib/query-url";
 import { useSelection } from "../stores/selection";
 import { useTagNames } from "./TagEditor";
 
@@ -30,6 +31,8 @@ export function QueryBuilder({ value, onChange, initialSource = "all", showPairs
   const [any, setAny] = useState<string[]>(value.tagsAny ?? []);
   const [none, setNone] = useState<string[]>(value.tagsNone ?? []);
   const [glob, setGlob] = useState(value.nameGlob ?? "");
+  const [formats, setFormats] = useState<string[]>(value.formats ?? []);
+  const [minSize, setMinSize] = useState<number | undefined>(value.minSize);
   const [globD] = useDebouncedValue(glob, 300);
 
   const query = useMemo<ImageQuery>(() => {
@@ -40,17 +43,19 @@ export function QueryBuilder({ value, onChange, initialSource = "all", showPairs
       if (any.length) q.tagsAny = any;
       if (none.length) q.tagsNone = none;
       if (globD.trim()) q.nameGlob = globD.trim();
+      if (formats.length) q.formats = formats;
+      if (minSize) q.minSize = minSize;
       return q;
     }
     return {};
-  }, [source, selected, all, any, none, globD]);
+  }, [source, selected, all, any, none, globD, formats, minSize]);
 
   useEffect(() => onChange(query), [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: count, error } = useCount(query);
   const sources = [
     { value: "all", label: "All images" },
-    { value: "filter", label: "Tags / name" },
+    { value: "filter", label: "Filter" },
     { value: "selection", label: `Selection (${selected.size})`, disabled: selected.size === 0 },
   ];
   return (
@@ -70,6 +75,17 @@ export function QueryBuilder({ value, onChange, initialSource = "all", showPairs
             value={glob}
             onChange={(e) => setGlob(e.currentTarget.value)}
           />
+          <Group grow align="flex-start">
+            <MultiSelect label="Stored as" placeholder={formats.length ? "" : "Any type"} data={IMAGE_FORMATS} value={formats} onChange={setFormats} clearable />
+            <Select
+              label="File size"
+              placeholder="Any size"
+              data={MIN_SIZES.map((mb) => ({ value: String(mb * (1 << 20)), label: `At least ${mb} MB` }))}
+              value={minSize ? String(minSize) : null}
+              onChange={(v) => setMinSize(v ? Number(v) : undefined)}
+              clearable
+            />
+          </Group>
         </Stack>
       )}
       <Group gap="xs">

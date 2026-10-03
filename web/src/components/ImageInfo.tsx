@@ -8,6 +8,7 @@ import { api, errorMessage, originalUrl } from "../api/client";
 import { invalidateTopics, useImageDetail, useRename, useRestore, useTrash } from "../api/hooks";
 import type { DeckRef, Image } from "../api/types";
 import { formatBytes, formatDate, formatScore, formatTaken } from "../lib/format";
+import { formatName } from "../lib/reencode";
 import { AnalysisResults } from "./AnalysisResults";
 import { GenerationInfo } from "./generate/GenerationInfo";
 import { AddToDeck } from "./slideshow/AddToDeck";
@@ -111,6 +112,26 @@ export function ImageInfo({ id, onTrashed }: { id: number; onTrashed?: () => voi
     ["ID", `#${im.id} · ${im.uid}`],
     ["SHA-256", im.sha256.slice(0, 16) + "…"],
   ];
+  for (const r of data.reencodes ?? []) {
+    rows.push([
+      "Re-encoded",
+      <>
+        {formatDate(r.at)}: {formatName(r.oldFormat)} {formatBytes(r.oldSize)}, {r.oldWidth} × {r.oldHeight} →{" "}
+        {formatName(r.newFormat)} {formatBytes(r.newSize)}
+        {r.newWidth !== r.oldWidth ? `, ${r.newWidth} × ${r.newHeight}` : ""}
+        {r.batchId ? (
+          <>
+            {" "}
+            (
+            <Anchor component={Link} to={`/reencode/${r.batchId}`} size="xs">
+              batch
+            </Anchor>
+            )
+          </>
+        ) : null}
+      </>,
+    ]);
+  }
   return (
     <Stack gap="md" p="md">
       <NameEditor image={im} />

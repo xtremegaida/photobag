@@ -8,6 +8,7 @@ import {
   IconSparkles,
   IconTagMinus,
   IconTagPlus,
+  IconTransform,
   IconTrash,
   IconUpload,
   IconX,
@@ -18,6 +19,7 @@ import { errorMessage } from "../api/client";
 import { useBulkTags, useRestore, useTrash } from "../api/hooks";
 import { plural } from "../lib/format";
 import { useSelection } from "../stores/selection";
+import { ReencodeDialog } from "./reencode/ReencodeDialog";
 import { AddToDeck } from "./slideshow/AddToDeck";
 import { useStartSlideshow } from "./slideshow/start";
 import { useTagNames } from "./TagEditor";
@@ -85,6 +87,7 @@ export function BulkBar({ allIds, trash }: { allIds: number[]; trash?: boolean }
   const restoreM = useRestore();
   const navigate = useNavigate();
   const startSlideshow = useStartSlideshow();
+  const [reencoding, setReencoding] = useState(false);
   // The selection in gallery order (for decks and slideshows), then any
   // selected images the filters now hide.
   const inOrder = useMemo(() => {
@@ -148,6 +151,9 @@ export function BulkBar({ allIds, trash }: { allIds: number[]; trash?: boolean }
               >
                 Score
               </Button>
+              <Button size="xs" variant="light" leftSection={<IconTransform size={16} />} onClick={() => setReencoding(true)}>
+                Re-encode
+              </Button>
               <Button
                 size="xs"
                 variant="light"
@@ -169,6 +175,7 @@ export function BulkBar({ allIds, trash }: { allIds: number[]; trash?: boolean }
           )}
         </Group>
       </Group>
+      <ReencodeDialog opened={reencoding} onClose={() => setReencoding(false)} ids={inOrder} />
     </Paper>
   );
 }

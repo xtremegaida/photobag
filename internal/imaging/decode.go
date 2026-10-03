@@ -78,6 +78,9 @@ func Decode(f Format, b []byte) (image.Image, error) {
 				img, err = webp.Decode(bytes.NewReader(frame))
 			}
 		}
+		if err == nil {
+			img = vp8RGB(img)
+		}
 	case BMP:
 		img, err = bmp.Decode(r)
 	case TIFF:
@@ -160,4 +163,71 @@ func webpFirstFrame(b []byte) []byte {
 func put24(b []byte, v int) {
 	v--
 	b[0], b[1], b[2] = byte(v), byte(v>>8), byte(v>>16)
+}
+
+// vp8RGB converts the planes of a lossy WebP to RGB. VP8 stores BT.601
+// "studio range" YUV (Y 16..235), as browsers decode it, while Go's YCbCr
+// types assume the full range of JPEG; read as such, colours lose contrast.
+// Chroma is upsampled the way libwebp's "fancy" upsampler does it.
+func vp8RGB(img image.Image) image.Image {
+	var yc *image.YCbCr
+	var alpha []uint8
+	var astride int
+	switch m := img.(type) {
+	case *image.YCbCr:
+		yc = m
+	case *image.NYCbCrA:
+		yc, alpha, astride = &m.YCbCr, m.A, m.AStride
+	default:
+		return img
+	}
+	if yc.SubsampleRatio != image.YCbCrSubsampleRatio420 {
+		return img
+	}
+	b := yc.Rect
+	w, h := b.Dx(), b.Dy()
+	cw, ch := (w+1)/2, (h+1)/2
+	// chroma returns the 9-3-3-1 weighted chroma for luma pixel (x, y).
+	chroma := func(plane []uint8, x, y int) int {
+		cx, cy := x/2, y/2
+		nx, ny := cx-1, cy-1
+		if x%2 == 1 {
+			nx = cx + 1
+		}
+		if y%2 == 1 {
+			ny = cy + 1
+		}
+		nx, ny = min(max(nx, 0), cw-1), min(max(ny, 0), ch-1)
+		at := func(i, j int) int { return int(plane[j*yc.CStride+i]) }
+		return (9*at(cx, cy) + 3*at(nx, cy) + 3*at(cx, ny) + at(nx, ny) + 8) >> 4
+	}
+	clamp := func(v int) uint8 { return uint8(min(max(v, 0), 255)) }
+	rgb := func(dst []uint8, x, y int) {
+		c := 298 * (int(yc.Y[y*yc.YStride+x]) - 16)
+		d := chroma(yc.Cb, x, y) - 128
+		e := chroma(yc.Cr, x, y) - 128
+		dst[0] = clamp((c + 409*e + 128) >> 8)
+		dst[1] = clamp((c - 100*d - 208*e + 128) >> 8)
+		dst[2] = clamp((c + 516*d + 128) >> 8)
+	}
+	if alpha == nil {
+		out := image.NewRGBA(image.Rect(0, 0, w, h))
+		for y := 0; y < h; y++ {
+			row := out.Pix[y*out.Stride:]
+			for x := 0; x < w; x++ {
+				rgb(row[4*x:], x, y)
+				row[4*x+3] = 255
+			}
+		}
+		return out
+	}
+	out := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		row := out.Pix[y*out.Stride:]
+		for x := 0; x < w; x++ {
+			rgb(row[4*x:], x, y)
+			row[4*x+3] = alpha[y*astride+x]
+		}
+	}
+	return out
 }

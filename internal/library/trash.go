@@ -48,10 +48,11 @@ func Restore(ctx context.Context, b *bag.Bag, ids []int64) (int, error) {
 	return int(n), err
 }
 
-// UnusedBlob is a condition on blobs: neither an image nor a generated
-// image held in an experiment uses it.
+// UnusedBlob is a condition on blobs: neither an image, nor a generated
+// image held in an experiment, nor a re-encode awaiting review uses it.
 const UnusedBlob = `NOT EXISTS (SELECT 1 FROM images WHERE images.blob_id = blobs.id)
-	AND NOT EXISTS (SELECT 1 FROM generations WHERE generations.blob_id = blobs.id)`
+	AND NOT EXISTS (SELECT 1 FROM generations WHERE generations.blob_id = blobs.id)
+	AND NOT EXISTS (SELECT 1 FROM reencode_items WHERE reencode_items.new_blob_id = blobs.id)`
 
 // PurgeResult summarises an empty-trash operation.
 type PurgeResult struct {
@@ -97,6 +98,11 @@ func EmptyTrash(ctx context.Context, b *bag.Bag, ids []int64) (PurgeResult, erro
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM deck_images WHERE image_id IN (SELECT id FROM temp.purge_ids)"); err != nil {
+			return err
+		}
+		// Re-encodes of purged images have nothing left to replace.
+		if _, err := tx.ExecContext(ctx, `UPDATE reencode_items SET status = 'skipped', reason = 'the image was deleted',
+			new_blob_id = NULL WHERE status IN ('pending', 'ready') AND image_id IN (SELECT id FROM temp.purge_ids)`); err != nil {
 			return err
 		}
 		if err := tx.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(size), 0) FROM blobs

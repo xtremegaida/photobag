@@ -54,6 +54,8 @@ const topicKeys: Record<string, string[]> = {
   tags: ["tags", "image", "detail", "ids", "count"],
   trash: ["ids", "count", "stats", "image", "detail", "decks", "deck"],
   decks: ["decks", "deck", "detail"],
+  files: ["files", "file-summary", "file-folders"],
+  reencode: ["reencode", "reencode-batch", "detail"],
   metrics: ["metrics", "rankings", "detail", "ids"],
   runs: ["runs", "run", "metrics"],
   dedup: ["scans", "scan"],

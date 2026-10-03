@@ -16,6 +16,7 @@ import {
   IconChartBar,
   IconCopy,
   IconDownload,
+  IconFolders,
   IconFolderUp,
   IconListCheck,
   IconMoon,
@@ -24,6 +25,7 @@ import {
   IconSparkles,
   IconSun,
   IconTags,
+  IconTransform,
   IconTrash,
   IconUpload,
   IconWand,
@@ -31,6 +33,7 @@ import {
 import { Navigate, NavLink as RouterNavLink, Route, Routes, useLocation } from "react-router";
 import { useServerEvents } from "./api/events";
 import { useStats } from "./api/hooks";
+import { UploadPanel } from "./components/files/UploadPanel";
 import { JobIndicator } from "./components/JobIndicator";
 import { formatBytes, plural } from "./lib/format";
 import { AnalysisPage } from "./pages/Analysis";
@@ -41,11 +44,14 @@ import { DecksPage } from "./pages/Decks";
 import { DedupPage } from "./pages/Dedup";
 import { ExperimentPage } from "./pages/Experiment";
 import { ExportPage } from "./pages/Export";
+import { FilesPage } from "./pages/Files";
 import { GalleryPage } from "./pages/Gallery";
 import { GeneratePage } from "./pages/Generate";
 import { ImportPage } from "./pages/Import";
 import { JobsPage } from "./pages/Jobs";
 import { RankingsPage } from "./pages/Rankings";
+import { ReencodePage } from "./pages/Reencode";
+import { ReencodeBatchPage } from "./pages/ReencodeBatch";
 import { ScoringPage } from "./pages/Scoring";
 import { SlideshowPage } from "./pages/Slideshow";
 import { TagsPage } from "./pages/Tags";
@@ -55,6 +61,7 @@ const nav = [
   { to: "/", label: "Library", icon: IconPhoto, end: true },
   { to: "/tags", label: "Tags", icon: IconTags },
   { to: "/decks", label: "Slide decks", icon: IconPresentation },
+  { to: "/files", label: "Files", icon: IconFolders },
   { to: "/duplicates", label: "Duplicates", icon: IconCopy },
   { to: "/scoring", label: "Scoring", icon: IconChartBar },
   { to: "/analysis", label: "Analysis", icon: IconSparkles },
@@ -64,6 +71,7 @@ const nav = [
   { to: "/export", label: "Export", icon: IconUpload },
   { to: "/backup", label: "Backup", icon: IconDownload },
   { divider: "Housekeeping" },
+  { to: "/reencode", label: "Re-encode", icon: IconTransform },
   { to: "/trash", label: "Trash", icon: IconTrash },
   { to: "/jobs", label: "Jobs", icon: IconListCheck },
 ] as const;
@@ -158,6 +166,9 @@ export function App() {
             <Route path="/tags" element={<TagsPage />} />
             <Route path="/decks" element={<DecksPage />} />
             <Route path="/decks/:id" element={<DeckPage />} />
+            <Route path="/files/*" element={<FilesPage />} />
+            <Route path="/reencode" element={<ReencodePage />} />
+            <Route path="/reencode/:id" element={<ReencodeBatchPage />} />
             <Route path="/duplicates" element={<DedupPage />} />
             <Route path="/scoring" element={<ScoringPage />} />
             <Route path="/scoring/runs/:id" element={<ComparePage />} />
@@ -173,6 +184,7 @@ export function App() {
           </Routes>
         </div>
       </AppShell.Main>
+      <UploadPanel />
     </AppShell>
   );
 }

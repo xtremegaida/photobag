@@ -107,7 +107,7 @@ use the dedup step (UI or "photobag dedup") to remove redundant images.`,
 	cmd.Flags().StringArrayVar(&opts.Tags, "tag", nil, "tag every imported image (repeatable)")
 	cmd.Flags().BoolVar(&opts.TagFolders, "tag-folders", false, "tag images with each folder name of their path")
 	cmd.Flags().BoolVar(&opts.SkipIdentical, "skip-identical", false, "skip files whose bytes are already in the bag")
-	cmd.Flags().BoolVar(&opts.IncludeRemoved, "include-removed", false, "import files even if an identical image was removed from the bag")
+	cmd.Flags().BoolVar(&opts.IncludeRemoved, "include-removed", false, "import files even if an identical image was removed from the bag (or replaced by re-encoding)")
 	cmd.Flags().IntVar(&opts.Workers, "workers", 0, "parallel workers (default: CPUs-1)")
 	cmd.Flags().StringVar(&reportPath, "report", "", "write the full per-file report as JSON")
 	return cmd

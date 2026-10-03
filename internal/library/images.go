@@ -223,8 +223,9 @@ func Rename(ctx context.Context, b *bag.Bag, id int64, name string) (string, err
 
 // Blob is an image's original bytes.
 type Blob struct {
-	Image Image
-	Data  []byte
+	Image       Image
+	Data        []byte
+	Orientation int
 }
 
 // Original loads the original bytes of an image.
@@ -234,15 +235,16 @@ func Original(ctx context.Context, b *bag.Bag, id int64) (*Blob, error) {
 		return nil, err
 	}
 	var data []byte
+	var orientation int
 	err = b.R.QueryRowContext(ctx,
-		"SELECT bl.data FROM images i JOIN blobs bl ON bl.id = i.blob_id WHERE i.id = ?", id).Scan(&data)
+		"SELECT bl.data, i.orientation FROM images i JOIN blobs bl ON bl.id = i.blob_id WHERE i.id = ?", id).Scan(&data, &orientation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("image %d has been purged: %w", id, ErrNotFound)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &Blob{Image: *im, Data: data}, nil
+	return &Blob{Image: *im, Data: data, Orientation: orientation}, nil
 }
 
 // BlobInfo identifies the blob behind an image for preview caching.

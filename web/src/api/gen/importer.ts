@@ -28,8 +28,8 @@ export interface Options {
    */
   skipIdentical?: boolean;
   /**
-   * IncludeRemoved imports files matching trashed/purged images instead of
-   * skipping them as "previously removed".
+   * IncludeRemoved imports files matching trashed/purged images, or
+   * originals that re-encoding replaced, instead of skipping them.
    */
   includeRemoved?: boolean;
 }

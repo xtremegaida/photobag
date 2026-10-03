@@ -33,6 +33,14 @@ export interface ImageQuery {
    */
   text?: string;
   /**
+   * Formats keeps images stored in these formats ("jpeg", "png"...).
+   */
+  formats?: string[];
+  /**
+   * MinSize keeps files of at least this many bytes.
+   */
+  minSize?: number /* int64 */;
+  /**
    * IDs restricts the result to these images (a UI selection).
    */
   ids?: number /* int64 */[];

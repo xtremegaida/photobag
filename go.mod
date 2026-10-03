@@ -1,9 +1,11 @@
 module photobag
 
-go 1.26.0
+go 1.26.4
 
 require (
 	github.com/coder/websocket v1.8.15
+	github.com/gen2brain/jpegn v0.6.1
+	github.com/gen2brain/vpx v0.2.1
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/image v0.46.0

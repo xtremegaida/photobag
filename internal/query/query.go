@@ -31,10 +31,17 @@ type ImageQuery struct {
 	// Danbooru tags, categories), ignoring case. Every word must occur;
 	// "quoted phrases" match as a whole.
 	Text string `json:"text,omitempty"`
+	// Formats keeps images stored in these formats ("jpeg", "png"...).
+	Formats []string `json:"formats,omitempty"`
+	// MinSize keeps files of at least this many bytes.
+	MinSize int64 `json:"minSize,omitempty"`
 	// IDs restricts the result to these images (a UI selection).
 	IDs   []int64 `json:"ids,omitempty"`
 	Scope Scope   `json:"scope,omitempty"`
 }
+
+// formatNames are the stored formats, as the filter names them.
+var formatNames = map[string]string{"jpeg": "JPEG", "png": "PNG", "gif": "GIF", "webp": "WebP", "bmp": "BMP", "tiff": "TIFF"}
 
 // Validate checks the query for malformed parts.
 func (q ImageQuery) Validate() error {
@@ -42,6 +49,14 @@ func (q ImageQuery) Validate() error {
 	case "", Active, Trash:
 	default:
 		return fmt.Errorf("unknown scope %q", q.Scope)
+	}
+	for _, f := range q.Formats {
+		if formatNames[f] == "" {
+			return fmt.Errorf("unknown image format %q", f)
+		}
+	}
+	if q.MinSize < 0 {
+		return fmt.Errorf("the smallest file size must not be negative")
 	}
 	if q.NameGlob != "" {
 		return bag.ValidateGlob(q.glob())
@@ -60,7 +75,8 @@ func (q ImageQuery) glob() string {
 // IsEmpty reports whether the query has no filters (selects the whole scope).
 func (q ImageQuery) IsEmpty() bool {
 	return len(q.TagsAll) == 0 && len(q.TagsAny) == 0 && len(q.TagsNone) == 0 &&
-		!q.Untagged && strings.TrimSpace(q.NameGlob) == "" && len(q.IDs) == 0 && len(SearchTerms(q.Text)) == 0
+		!q.Untagged && strings.TrimSpace(q.NameGlob) == "" && len(q.IDs) == 0 && len(SearchTerms(q.Text)) == 0 &&
+		len(q.Formats) == 0 && q.MinSize <= 0
 }
 
 // SearchTerms splits a search string into words and "quoted phrases".
@@ -128,6 +144,16 @@ func (q ImageQuery) Where(alias string) (string, []any) {
 		conds = append(conds, "EXISTS (SELECT 1 FROM analyses an WHERE an.image_id = "+a+"id AND pb_contains(an.text, ?))")
 		args = append(args, term)
 	}
+	if len(q.Formats) > 0 {
+		conds = append(conds, a+"format IN ("+placeholders(len(q.Formats))+")")
+		for _, f := range q.Formats {
+			args = append(args, f)
+		}
+	}
+	if q.MinSize > 0 {
+		conds = append(conds, a+"size >= ?")
+		args = append(args, q.MinSize)
+	}
 	if len(q.IDs) > 0 {
 		js, _ := json.Marshal(q.IDs)
 		conds = append(conds, a+"id IN (SELECT value FROM json_each(?))")
@@ -162,6 +188,16 @@ func (q ImageQuery) Describe() string {
 	}
 	if t := strings.TrimSpace(q.Text); t != "" {
 		parts = append(parts, fmt.Sprintf("described as %q", t))
+	}
+	if len(q.Formats) > 0 {
+		names := make([]string, len(q.Formats))
+		for i, f := range q.Formats {
+			names[i] = formatNames[f]
+		}
+		parts = append(parts, strings.Join(names, "/"))
+	}
+	if q.MinSize > 0 {
+		parts = append(parts, fmt.Sprintf("at least %s", sizeText(q.MinSize)))
 	}
 	if len(parts) == 0 {
 		return "all images"
@@ -238,4 +274,14 @@ func (s Sort) SQL(alias string) (join string, order string, args []any) {
 		return "", "((" + a + "id * 2654435761 + ?) % 4294967291)", []any{s.Seed}
 	}
 	return "", a + "imported_at" + dir + ", " + a + "id" + dir, nil
+}
+
+func sizeText(n int64) string {
+	if n >= 1<<20 && n%(1<<20) == 0 {
+		return fmt.Sprintf("%d MB", n>>20)
+	}
+	if n >= 1<<20 {
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	}
+	return fmt.Sprintf("%d KB", (n+1023)>>10)
 }

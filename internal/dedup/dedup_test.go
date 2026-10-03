@@ -115,11 +115,11 @@ func TestSimilarScanResolveRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 1 + 1 + 1 from the pairs, and 2 of the 3 fixture copies: the lossy
-	// animated WebP is only chained in via still.webp (0.88 to the keeper),
-	// so it is shown but not pre-marked.
-	if n != 5 {
-		t.Errorf("trashed %d, want 5", n)
+	// 1 + 1 + 1 from the pairs, and all 3 fixture copies besides the
+	// keeper. (Lossy WebP decoded with JPEG's colour range used to look
+	// different enough that the animated one was not pre-marked.)
+	if n != 6 {
+		t.Errorf("trashed %d, want 6", n)
 	}
 	s.MarkResolved(res)
 	if left := s.Clusters(DefaultThreshold); len(left) != 0 {

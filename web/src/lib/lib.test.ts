@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createBatcher } from "../api/batcher";
+import type { ReencodeItem } from "../api/types";
+import { decodeText, isClutter, resolveNoteLink, splitExt } from "./files";
+import { DEFAULT_REENCODE, defaultMode, describeReencode, pickItems, psnrLabel, sizeChange } from "./reencode";
 import { formatBytes, formatTaken, percent } from "./format";
 import type { AnalysisSettings, TaggerStatus } from "../api/types";
 import { defaultSweep, gridLayout, isSeedName, rangeValues, requestFrom, valueCount, valueKind } from "./generate";
@@ -285,5 +288,64 @@ describe("slide decks", () => {
   it("links slideshows", () => {
     expect(slideshowPath({ deck: 4, start: 3 })).toBe("/slideshow?deck=4&start=3");
     expect(slideshowPath({ params: new URLSearchParams("tag=cats&sort=name") })).toBe("/slideshow?tag=cats&sort=name");
+  });
+});
+
+describe("files", () => {
+  it("resolves the links of notes against their folder", () => {
+    expect(resolveNoteLink("docs/guide.md", "img/a%20b.png")).toBe("docs/img/a b.png");
+    expect(resolveNoteLink("docs/guide.md", "../README.md#intro")).toBe("README.md");
+    expect(resolveNoteLink("docs/guide.md", "./other.md?x=1")).toBe("docs/other.md");
+    expect(resolveNoteLink("guide.md", "../escape.md")).toBeNull();
+    for (const external of ["https://example.com/a.png", "mailto:a@b.c", "#section", "/api/x", "//host/x", ""]) {
+      expect(resolveNoteLink("docs/guide.md", external)).toBeNull();
+    }
+  });
+  it("guesses text encodings", () => {
+    const enc = (s: string) => new TextEncoder().encode(s).buffer;
+    expect(decodeText(enc("héllo"))).toEqual({ text: "héllo", encoding: "UTF-8" });
+    expect(decodeText(new Uint8Array([0xef, 0xbb, 0xbf, 0x68, 0x69]).buffer)).toEqual({ text: "hi", encoding: "UTF-8" });
+    expect(decodeText(new Uint8Array([0xff, 0xfe, 0x68, 0x00, 0x69, 0x00]).buffer)).toEqual({ text: "hi", encoding: "UTF-16" });
+    expect(decodeText(new Uint8Array([0x63, 0x61, 0x66, 0xe9]).buffer)).toEqual({ text: "café", encoding: "Windows-1252" });
+    // A multi-byte character cut off by a partial read stays UTF-8.
+    const cut = new Uint8Array([...new TextEncoder().encode("abcdefé")].slice(0, -1));
+    expect(decodeText(cut.buffer).encoding).toBe("UTF-8");
+  });
+  it("splits names and spots clutter", () => {
+    expect(splitExt("notes.final.md")).toEqual(["notes.final", ".md"]);
+    expect(splitExt(".gitignore")).toEqual([".gitignore", ""]);
+    expect(splitExt("README")).toEqual(["README", ""]);
+    expect(isClutter(".DS_Store") && isClutter("Thumbs.db") && !isClutter("notes.md")).toBe(true);
+  });
+});
+
+describe("re-encoding", () => {
+  it("describes settings and picks the mode", () => {
+    expect(describeReencode(DEFAULT_REENCODE)).toBe("lossless WebP");
+    expect(defaultMode(DEFAULT_REENCODE)).toBe("replace");
+    const lossy = { ...DEFAULT_REENCODE, lossless: false, format: "jpeg" as const, quality: 85, maxWidth: 2000 };
+    expect(describeReencode(lossy)).toBe("JPEG q85, at most 2000 wide");
+    expect(defaultMode(lossy)).toBe("review");
+    expect(defaultMode({ ...DEFAULT_REENCODE, format: "png", maxHeight: 1000 })).toBe("review");
+  });
+  it("reads results", () => {
+    expect(sizeChange(1000, 260)).toBe("−74%");
+    expect(sizeChange(1000, 1120)).toBe("+12%");
+    expect(psnrLabel(undefined).label).toBe("identical pixels");
+    expect(psnrLabel(40).label).toBe("good");
+    expect(psnrLabel(28).color).toBe("red");
+    const item = (imageId: number, status: string, oldSize: number, newSize?: number, psnr?: number) =>
+      ({ imageId, name: `n${imageId}`, ord: imageId, status, oldSize, newSize, psnr, notes: [] }) as unknown as ReencodeItem;
+    const items = [item(1, "ready", 100, 90, 40), item(2, "ready", 100, 10, 30), item(3, "skipped", 50), item(4, "replaced", 10, 5)];
+    expect(pickItems(items, "ready", "saving").map((i) => i.imageId)).toEqual([2, 1]);
+    expect(pickItems(items, "ready", "quality").map((i) => i.imageId)).toEqual([2, 1]);
+    expect(pickItems(items, "other", "order").map((i) => i.imageId)).toEqual([3]);
+    expect(pickItems(items, "all", "order")).toHaveLength(4);
+  });
+  it("keeps type and size filters in the URL", () => {
+    const st = parseGallery(new URLSearchParams("type=png&type=webp&type=heic&minmb=5"));
+    expect(st.query).toEqual({ formats: ["png", "webp"], minSize: 5 << 20 });
+    expect(galleryParams(st).toString()).toBe("type=png&type=webp&minmb=5");
+    expect(hasFilters({ minSize: 1 })).toBe(true);
   });
 });

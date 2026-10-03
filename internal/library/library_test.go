@@ -83,6 +83,22 @@ func TestQueries(t *testing.T) {
 	if err := (query.ImageQuery{NameGlob: "[unclosed"}).Validate(); err == nil {
 		t.Error("bad glob should not validate")
 	}
+	if n := count(query.ImageQuery{Formats: []string{"png", "webp"}}); n != 2+2 { // sunset ×2, still and animated webp
+		t.Errorf("png or webp = %d", n)
+	}
+	var biggest int64
+	var largest int
+	b.R.QueryRow("SELECT max(size) FROM images").Scan(&biggest)
+	b.R.QueryRow("SELECT count(*) FROM images WHERE size = ?", biggest).Scan(&largest)
+	if n := count(query.ImageQuery{MinSize: biggest}); n != largest || n == 0 {
+		t.Errorf("at least the biggest = %d, want %d", n, largest)
+	}
+	if err := (query.ImageQuery{Formats: []string{"heic"}}).Validate(); err == nil {
+		t.Error("unknown format should not validate")
+	}
+	if d := (query.ImageQuery{Formats: []string{"png", "jpeg"}, MinSize: 5 << 20}).Describe(); d != "PNG/JPEG, at least 5 MB" {
+		t.Errorf("describe %q", d)
+	}
 
 	// Untagged: remove the folder tags from one image.
 	sky := byPath["misc/sky.jpg"]

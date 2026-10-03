@@ -22,8 +22,10 @@ import (
 	"photobag/internal/dedup"
 	"photobag/internal/events"
 	"photobag/internal/experiments"
+	"photobag/internal/files"
 	"photobag/internal/importer"
 	"photobag/internal/jobs"
+	"photobag/internal/reencode"
 	"photobag/internal/scoring"
 	"photobag/internal/tagger"
 )
@@ -175,6 +177,12 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 	}
 	backup.CleanStale(s.b.Path)
+	if err := files.Tidy(ctx, s.b); err != nil {
+		s.log.Warn("could not tidy up interrupted file uploads", "err", err)
+	}
+	if err := reencode.Interrupted(ctx, s.b); err != nil {
+		s.log.Warn("could not mark interrupted re-encodes", "err", err)
+	}
 	if err := experiments.RecoverRuns(ctx, s.b); err != nil {
 		s.log.Warn("could not tidy up interrupted generations", "err", err)
 	}

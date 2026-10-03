@@ -37,8 +37,8 @@ type Options struct {
 	TagFolders bool `json:"tagFolders,omitempty"`
 	// SkipIdentical skips files whose bytes already belong to an active image.
 	SkipIdentical bool `json:"skipIdentical,omitempty"`
-	// IncludeRemoved imports files matching trashed/purged images instead of
-	// skipping them as "previously removed".
+	// IncludeRemoved imports files matching trashed/purged images, or
+	// originals that re-encoding replaced, instead of skipping them.
 	IncludeRemoved bool `json:"includeRemoved,omitempty"`
 
 	Workers      int   `json:"-"`
@@ -115,6 +115,8 @@ type run struct {
 	blobs   map[[32]byte]bool // blobs already in the bag
 	active  map[[32]byte]bool // shas of active images (SkipIdentical)
 	removed map[[32]byte]bool // shas only held by trashed/purged images
+	// reencoded holds the shas of originals that re-encodes replaced.
+	reencoded map[[32]byte]bool
 
 	mu       sync.Mutex
 	claims   map[[32]byte]*claim
@@ -223,9 +225,6 @@ feed:
 	return &r.report, nil
 }
 
-var junkDirs = map[string]bool{"$recycle.bin": true, "system volume information": true, "@eadir": true, "#recycle": true}
-var junkFiles = map[string]bool{"thumbs.db": true, "desktop.ini": true, "ehthumbs.db": true}
-
 func (r *run) walk(ctx context.Context) ([]file, error) {
 	var files []file
 	err := filepath.WalkDir(r.root, func(path string, d fs.DirEntry, err error) error {
@@ -252,12 +251,12 @@ func (r *run) walk(ctx context.Context) ([]file, error) {
 			}
 		}
 		if d.IsDir() {
-			if path != r.root && (!r.opts.Recursive || junkDirs[strings.ToLower(name)]) {
+			if path != r.root && (!r.opts.Recursive || sysutil.Junk(name, true)) {
 				return fs.SkipDir
 			}
 			return nil
 		}
-		if junkFiles[strings.ToLower(name)] {
+		if sysutil.Junk(name, false) {
 			return nil
 		}
 		info, err := os.Stat(path) // follows symlinks
@@ -308,6 +307,10 @@ func (r *run) loadState(ctx context.Context) error {
 	if !r.opts.IncludeRemoved {
 		if r.removed, err = load(`SELECT DISTINCT sha256 FROM images WHERE (deleted_at IS NOT NULL OR purged_at IS NOT NULL)
 			AND sha256 NOT IN (SELECT sha256 FROM images WHERE deleted_at IS NULL AND purged_at IS NULL)`); err != nil {
+			return err
+		}
+		if r.reencoded, err = load(`SELECT DISTINCT old_sha256 FROM image_reencodes
+			WHERE old_sha256 NOT IN (SELECT sha256 FROM images WHERE deleted_at IS NULL AND purged_at IS NULL)`); err != nil {
 			return err
 		}
 	}
@@ -461,6 +464,10 @@ func (r *run) prepare(ctx context.Context, f file) (it *item, fr *FileReport, ow
 	if r.removed[sha] {
 		r.mu.Unlock()
 		return nil, skipped("previously removed from the bag (use include-removed to import anyway)"), nil
+	}
+	if r.reencoded[sha] {
+		r.mu.Unlock()
+		return nil, skipped("the original of an image that was re-encoded (use include-removed to import anyway)"), nil
 	}
 	if r.opts.SkipIdentical {
 		r.active[sha] = true // later identical files in this run are skipped

@@ -46,6 +46,14 @@ packages:
   - path: "photobag/internal/decks"
     output_path: "web/src/api/gen/decks.ts"
     include_files: ["types.go"]
+  - path: "photobag/internal/files"
+    output_path: "web/src/api/gen/files.ts"
+    include_files: ["files.go", "tree.go", "transfer.go"]
+    frontmatter: |
+      export type FileKind = "folder" | "text" | "markdown" | "image" | "pdf" | "audio" | "video" | "other";
+  - path: "photobag/internal/reencode"
+    output_path: "web/src/api/gen/reencode.ts"
+    include_files: ["types.go"]
   - path: "photobag/internal/tagger"
     output_path: "web/src/api/gen/tagger.ts"
     include_files: ["status.go"]

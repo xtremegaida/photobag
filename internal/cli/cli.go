@@ -55,7 +55,7 @@ Point any command at a bag file; it is created if it does not exist.`,
 
 	root.AddCommand(
 		serveCmd(g), importCmd(g), exportCmd(g), backupCmd(g),
-		dedupCmd(g), analyzeCmd(g), taggerCmd(), infoCmd(g), compactCmd(g), refreshCmd(g),
+		dedupCmd(g), analyzeCmd(g), taggerCmd(), filesCmd(g), infoCmd(g), compactCmd(g), refreshCmd(g),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

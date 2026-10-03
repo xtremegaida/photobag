@@ -14,6 +14,8 @@ const finishedTopics: Record<string, string[]> = {
   analyze: ["analysis", "tags", "images"],
   retag: ["analysis", "tags", "images"],
   generate: ["generations", "experiments"],
+  "files-import": ["files"],
+  reencode: ["reencode", "images", "stats"],
 };
 
 /** Backup jobs started by this tab: download the file when they finish. */

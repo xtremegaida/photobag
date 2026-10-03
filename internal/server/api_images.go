@@ -17,12 +17,15 @@ import (
 	"photobag/internal/imaging"
 	"photobag/internal/library"
 	"photobag/internal/query"
+	"photobag/internal/reencode"
 	"photobag/internal/similar"
 )
 
 func (s *Server) routes(mux *http.ServeMux) {
 	s.generateRoutes(mux)
 	s.deckRoutes(mux)
+	s.fileRoutes(mux)
+	s.reencodeRoutes(mux)
 	s.handle(mux, "GET /api/events", s.sse)
 	s.handle(mux, "GET /api/stats", s.getStats)
 
@@ -213,7 +216,11 @@ func (s *Server) getImage(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := map[string]any{"image": im, "scores": scores, "analyses": as, "decks": inDecks}
+	history, err := reencode.History(r.Context(), s.b, id)
+	if err != nil {
+		return err
+	}
+	out := map[string]any{"image": im, "scores": scores, "analyses": as, "decks": inDecks, "reencodes": history}
 	if g, err := experiments.ForImage(r.Context(), s.b, id); err != nil {
 		return err
 	} else if g != nil {
@@ -271,7 +278,8 @@ func (s *Server) thumbByID(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// An image's content never changes, so its thumbnail is immutable.
+	// Re-encoding keeps what an image shows, so its thumbnail can be cached
+	// for good even though its file may change.
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
@@ -308,9 +316,11 @@ func (s *Server) sendPreview(w http.ResponseWriter, r *http.Request, blobID int6
 		}
 	}
 	ctx := r.Context()
-	etag := fmt.Sprintf(`"%d-%d"`, blobID, size)
+	// Re-encoding gives an image a new blob, so browsers revalidate; the
+	// tag carries the decoder version (2: lossy WebP in studio range).
+	etag := fmt.Sprintf(`"%d-%d-2"`, blobID, size)
 	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Header().Set("Cache-Control", "private, no-cache")
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return nil
@@ -338,6 +348,9 @@ func (s *Server) sendPreview(w http.ResponseWriter, r *http.Request, blobID int6
 	return nil
 }
 
+// browserShows are the formats every browser displays.
+var browserShows = map[imaging.Format]bool{imaging.JPEG: true, imaging.PNG: true, imaging.GIF: true, imaging.WebP: true, imaging.BMP: true}
+
 // originalSlots bounds concurrent whole-blob reads (originals are loaded
 // into memory in full).
 var originalSlots = make(chan struct{}, 4)
@@ -358,15 +371,31 @@ func (s *Server) imageOriginal(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	f := imaging.Format(blob.Image.Format)
+	etag := `"` + blob.Image.SHA256 + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, no-cache") // re-encoding replaces originals
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return nil
+	}
+	data := blob.Data
+	// ?view=1 asks for something any browser shows upright and unaltered:
+	// formats browsers do not show, or whose orientation they might not
+	// apply, are rendered as PNG.
+	if r.URL.Query().Get("view") != "" && (!browserShows[f] || blob.Orientation > 1 && f != imaging.JPEG) {
+		if data, err = imaging.UprightPNG(f, blob.Data); err != nil {
+			return err
+		}
+		f = imaging.PNG
+	}
 	disp := "inline"
 	if r.URL.Query().Get("download") != "" {
 		disp = "attachment"
 	}
 	w.Header().Set("Content-Type", f.MIME())
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": exporter.SafeName(blob.Image.Name, f)}))
-	w.Header().Set("Cache-Control", "private, max-age=86400")
-	w.Header().Set("Content-Length", strconv.Itoa(len(blob.Data)))
-	w.Write(blob.Data)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Write(data)
 	return nil
 }
 
@@ -484,8 +513,8 @@ func (s *Server) deleteTag(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]bool{"ok": true})
 }
 
-// orderCache memoises similarity orders (they depend only on the ids,
-// since image content never changes).
+// orderCache memoises similarity orders (they depend on the ids and the
+// thumbprints, which only change when images are re-encoded).
 type orderCache struct {
 	mu    sync.Mutex
 	max   int
@@ -500,6 +529,15 @@ func (c *orderCache) get(k string) ([]int64, bool) {
 	defer c.mu.Unlock()
 	v, ok := c.items[k]
 	return v, ok
+}
+
+// clear forgets every order (image contents changed, so did their
+// thumbprints).
+func (c *orderCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.keys = nil
+	clear(c.items)
 }
 
 func (c *orderCache) put(k string, v []int64) {

@@ -47,7 +47,7 @@ export function ImportPage() {
           />
           <Checkbox
             label="Include previously removed images"
-            description="By default, files identical to images you trashed or purged are skipped"
+            description="By default, files identical to images you trashed or purged, or to originals replaced by re-encoding, are skipped"
             checked={!!opts.includeRemoved}
             onChange={(e) => set({ includeRemoved: e.currentTarget.checked })}
           />

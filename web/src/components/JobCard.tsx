@@ -2,7 +2,17 @@ import { Alert, Badge, Button, Card, Group, Progress, Stack, Table, Text } from 
 import type { ReactNode } from "react";
 import { api } from "../api/client";
 import { Link } from "react-router";
-import type { AnalysisProgress, AnalysisReport, ExportReport, GenerateProgress, GenerateResult, ImportReport, Job } from "../api/types";
+import type {
+  AnalysisProgress,
+  AnalysisReport,
+  ExportReport,
+  FileTransferReport,
+  GenerateProgress,
+  GenerateResult,
+  ImportReport,
+  Job,
+  ReencodeProgress,
+} from "../api/types";
 import { formatBytes, formatDate } from "../lib/format";
 import { eta, formatDuration, pipelineInfo } from "../lib/pipelines";
 import { isActive } from "../stores/jobs";
@@ -29,6 +39,15 @@ function ProgressLine({ job }: { job: Job }) {
     detail = `${p.done}/${p.total} images · ${p.written} written · ${p.skipped} skipped · ${p.failed} failed`;
   } else if ((job.kind === "dedup-scan" || job.kind === "refresh") && p.total !== undefined) {
     detail = `Comparing thumbprints ${p.done}/${p.total}`;
+  } else if ((job.kind === "files-import" || job.kind === "files-export") && p.phase) {
+    detail =
+      p.phase === "scanning"
+        ? `Scanning… ${p.found} files found`
+        : `${p.done}/${p.found} files · ${formatBytes(Number(p.bytes))}`;
+  } else if (job.kind === "reencode" && p.total !== undefined) {
+    const r = job.progress as ReencodeProgress;
+    const left = eta(job.startedAt, r.done, r.total);
+    detail = `${r.done}/${r.total} images · ${r.replaced} replaced · ${r.ready} to review${r.skipped ? ` · ${r.skipped} skipped` : ""}${r.failed ? ` · ${r.failed} failed` : ""}${left ? ` · about ${left} left` : ""}`;
   } else if (job.kind === "retag" && p.total !== undefined) {
     detail = `${p.done}/${p.total} images`;
   } else if (job.kind === "generate" && p.prompts !== undefined) {
@@ -226,6 +245,42 @@ function GenericResult({ job }: { job: Job }) {
       <Text size="sm">
         Made {g.images} image{g.images === 1 ? "" : "s"} from {g.prompts} prompt{g.prompts === 1 ? "" : "s"}
         {g.failed ? `, ${g.failed} failed` : ""}. <Link to={`/generate/${g.experimentId}`}>Open the experiment</Link>
+      </Text>
+    );
+  }
+  if (job.kind === "files-import" || job.kind === "files-export") {
+    const t = r as unknown as FileTransferReport;
+    const copied = t.added + t.replaced + t.renamed;
+    return (
+      <Stack gap={4}>
+        <Text size="sm">
+          {job.kind === "files-import" ? "Imported" : "Exported"} {copied} file{copied === 1 ? "" : "s"} ({formatBytes(t.bytes)})
+          {t.replaced ? `, ${t.replaced} replacing others` : ""}
+          {t.renamed ? `, ${t.renamed} kept beside others with a number` : ""}
+          {t.skipped ? `, ${t.skipped} skipped as already there` : ""}
+          {t.failed ? `, ${t.failed} failed` : ""}.{" "}
+          {job.kind === "files-import" && <Link to="/files">Open Files</Link>}
+        </Text>
+        {t.problems?.length > 0 && (
+          <Stack gap={2} mah={160} style={{ overflow: "auto" }}>
+            {t.problems.map((f) => (
+              <Text key={f.path} size="xs" c="red">
+                {f.path}: {f.reason}
+              </Text>
+            ))}
+          </Stack>
+        )}
+      </Stack>
+    );
+  }
+  if (job.kind === "reencode") {
+    const pr = (r as { progress?: ReencodeProgress }).progress;
+    return (
+      <Text size="sm">
+        {pr
+          ? `${pr.replaced} replaced${pr.newBytes ? ` (${formatBytes(pr.oldBytes)} → ${formatBytes(pr.newBytes)})` : ""}, ${pr.ready} to review, ${pr.skipped} skipped, ${pr.failed} failed. `
+          : ""}
+        <Link to={`/reencode/${String(r.batchId)}`}>Open the re-encode</Link>
       </Text>
     );
   }

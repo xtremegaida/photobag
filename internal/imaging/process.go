@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/jpeg"
+	"image/png"
 )
 
 // Pipeline sizes.
@@ -38,15 +39,19 @@ func Process(f Format, b []byte) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	work := Orient(Downscale(img, WorkingSize), meta.Orientation)
-	img = nil
+	dw, dh := OrientedSize(w, h, meta.Orientation)
+	return derive(f, img, dw, dh, meta)
+}
 
+// derive makes the thumbnail and thumbprint of a decoded image whose
+// display size is dw×dh.
+func derive(f Format, img image.Image, dw, dh int, meta Meta) (*Result, error) {
+	work := Orient(Downscale(img, WorkingSize), meta.Orientation)
 	thumb := Resize(work, ThumbSize)
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: ThumbQuality}); err != nil {
 		return nil, err
 	}
-	dw, dh := OrientedSize(w, h, meta.Orientation)
 	return &Result{
 		Format:      f,
 		Width:       dw,
@@ -66,6 +71,20 @@ func Working(f Format, b []byte) (*image.RGBA, error) {
 		return nil, err
 	}
 	return Orient(Downscale(img, WorkingSize), ReadMeta(f, b).Orientation), nil
+}
+
+// UprightPNG renders an image losslessly as PNG, orientation applied.
+func UprightPNG(f Format, b []byte) ([]byte, error) {
+	img, err := Decode(f, b)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	enc := png.Encoder{CompressionLevel: png.BestSpeed}
+	if err := enc.Encode(&buf, orientAny(img, ReadMeta(f, b).Orientation)); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // Preview renders an oriented JPEG whose long side is at most maxSide.

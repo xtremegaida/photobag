@@ -10,7 +10,9 @@ An organising, deduplicating bag for images. A whole photo library lives in
 - captions, text found in images, Danbooru tags and categories from a vision
   model,
 - ComfyUI workflows, generation experiments and how each generated image was
-  made.
+  made,
+- ordinary files in folders: notes, documentation, anything that should
+  travel with the library.
 
 You can copy, back up or carry the library as a single file.
 
@@ -24,6 +26,11 @@ existing, and can:
 - find **duplicates**, bit-identical or visually similar,
 - play **slideshows** of the library or of **slide decks** (images in an
   order you choose),
+- **re-encode** images to another format, quality or size (lossless PNG or
+  WebP, lossy JPEG or WebP, optionally scaled down), replacing the originals
+  at once or after comparing them side by side,
+- keep **files** (notes, documentation) in folders, and read text and
+  Markdown in the browser,
 - **analyse** images with a vision model behind any OpenAI-compatible API,
 - **generate** images with ComfyUI: run workflows with overrides, sweep
   settings to compare them, and keep the images that work.
@@ -46,8 +53,9 @@ pages.
 - Every image has a persistent id (UUIDv7).
 - Duplicate file names are fine, and images can be renamed in the UI.
 - The gallery is virtualised, so it stays fast with large libraries.
-- **Filter:** by tags (all or any), excluded tags, untagged images, and a
-  name glob (`IMG_*.jpg`; plain text matches anywhere in the name).
+- **Filter:** by tags (all or any), excluded tags, untagged images, a name
+  glob (`IMG_*.jpg`; plain text matches anywhere in the name), file type and
+  smallest file size.
 - **Sort:** by import date, capture date (EXIF), name, size, resolution,
   score, shuffle, or **visual similarity**. Similarity sort chains
   look-alikes together, or ranks everything by likeness to one image
@@ -55,7 +63,7 @@ pages.
 - **Select:** click, Ctrl/⌘-click, Shift-click ranges, Ctrl+A, or "select all
   matching".
 - **Bulk actions:** tag, untag, add to a slide deck, play as a slideshow,
-  export, score, and move to the trash.
+  export, score, re-encode, and move to the trash.
 - **Lightbox:** ← and → to browse, inline rename, a tag editor that picks
   existing tags or creates new ones, metadata, and per-metric scores.
 - **Tags page:** rename a tag, merge by renaming onto an existing tag, or
@@ -100,6 +108,73 @@ pages.
   - GIFs, PNGs and WebPs are shown as they are, so they animate and
     transparent parts show the background. Other images use a preview sized
     for the screen, prepared ahead of time.
+
+### Re-encoding
+
+Store images in another format, at another quality or at a smaller size.
+Select images in the library and use **Re-encode**, or start one on the
+**Re-encode** page and choose images by type, size, tags or name (for
+example every PNG of at least 5 MB).
+
+- **Formats:** lossless (PNG, or lossless WebP) or lossy (JPEG or WebP, with
+  a quality from 1 to 100). WebP and PNG have an effort setting (smaller
+  files take longer); JPEG can be progressive and keep colour at full
+  resolution (4:4:4). The encoders are pure Go
+  ([jpegn](https://github.com/gen2brain/jpegn),
+  [vpx](https://github.com/gen2brain/vpx)'s WebP, and Go's PNG).
+- **Scaling down:** a largest width and/or height. Images that already fit
+  keep their size; proportions are kept.
+- **What carries over:** pixels are turned upright (the EXIF orientation is
+  applied, and reset to 1). The colour profile is always kept; EXIF and XMP
+  are kept unless you untick *Keep the camera metadata*. Transparency is
+  kept, except in JPEG, where it is filled with white. Tags, scores, decks
+  and analysis results stay with the image, whose name gets the new
+  extension.
+- **Left alone:** animated GIF, PNG and WebP (only the first frame would
+  survive) and CMYK JPEGs. With *Only when the new file is smaller* (on by
+  default), an image whose new file would not be smaller keeps its
+  original.
+- **Try:** the dialog encodes three of the images and shows the size change
+  and how close the result is (PSNR), before you commit to all of them.
+- **Replace straight away** (the default for lossless re-encodes at full
+  size): each original is deleted as soon as its new file is made. Every new
+  file is decoded again first, and lossless ones must reproduce every pixel.
+- **Compare first** (the default otherwise): results wait beside their
+  originals. Open one to see both side by side, or flip between them (hold
+  Space). Zoom with the wheel or to the original's actual pixels (Z), and
+  drag to look around; both sides follow. Then **R** replaces and **K**
+  keeps the original, and the next one comes up. *Replace all* and *Keep
+  all* decide the rest. Sort by biggest saving or by most changed.
+- **Running:** a batch runs as a background job, on half the processor cores.
+  Stopped or interrupted batches carry on where they left off. The image's
+  details list each re-encode with the sizes before and after.
+- **Imports** skip files identical to an original that was replaced
+  (*include removed images* imports them anyway).
+- Results awaiting review are stored in the bag until you decide; deleting
+  the batch drops them and keeps the originals.
+
+### Files
+
+The **Files** page keeps ordinary files in the bag, in folders: notes,
+documentation, licences, anything that should travel with the library.
+
+- **Adding:** upload files or whole folders (drag them onto the page, or
+  onto a folder to put them there), or import a file or folder from the
+  machine running PhotoBag. When names are taken you choose to replace,
+  keep both (` (2)`) or skip.
+- **Organising:** new folders, rename (F2), move (drag onto a folder or a
+  part of the path, or *Move to…*), delete (Del). Names follow the same
+  rules as image names, so they export cleanly to Windows and Linux; they
+  are unique within a folder ignoring case.
+- **Viewing:** text and code open in the browser (UTF-8, UTF-16 or
+  Windows-1252), Markdown is shown formatted (tables, task lists; relative
+  links and images point into the bag), and images, PDFs, audio and video
+  play in place. Files are served sandboxed: an HTML page or SVG never runs
+  scripts, and HTML is shown as source.
+- **Getting them out:** download a file, or anything as a zip; or export to a
+  folder on the machine, keeping folders and modification times.
+- Identical files are stored once; contents are kept in 1 MB pieces, so large
+  files stream in and out.
 
 ### Import
 
@@ -332,6 +407,8 @@ photobag dedup   <bag> [--mode similar|exact] [--neighbors 8] [--threshold 0.9] 
 photobag analyze <bag> -p caption,ocr,danbooru,category [--mode missing|changed|all] [--endpoint URL] [--model M]
                        [--concurrency N] [--tagger local|host:port] [--dry-run] [selection flags]
 photobag tagger  install [--download-model] [--device auto|cuda|cpu] [--model REPO] | status | serve | script | uninstall
+photobag files   ls <bag> [path] [-r] | import <bag> <file-or-folder> [--to path] [--replace | --skip-existing]
+                 | export <bag> <folder> [--from path] [--overwrite | --skip-existing]
 photobag backup  <bag> <file-or-folder>
 photobag compact <bag>
 photobag info    <bag> [--json]
@@ -364,8 +441,9 @@ override the endpoint, model, concurrency and tagger for one run.
 
 ## Development
 
-**Requirements:** Go 1.26+ and Node 24+. No C compiler is needed, because the
-SQLite driver is pure Go.
+**Requirements:** Go 1.26.4+ (an older Go downloads it by itself) and Node
+24+. No C compiler is needed: the SQLite driver and the JPEG and WebP
+encoders are pure Go.
 
 ```bash
 node scripts/build.mjs                  # types + web UI + binaries for windows/amd64, linux/amd64, linux/arm64 → dist/
@@ -395,7 +473,7 @@ WebP, TIFF, BMP and GIF files, and junk files.
 | `cmd/photobag` | entry point |
 | `internal/cli` | cobra commands |
 | `internal/bag` | open/create/migrate the SQLite bag, pragmas, SQL functions (`pb_glob`), label keys |
-| `internal/imaging` | format sniffing, EXIF, decoding, area-filter downscale, orientation, thumbnails, previews, thumbprints |
+| `internal/imaging` | format sniffing, EXIF, decoding, area-filter downscale, orientation, thumbnails, previews, thumbprints; re-encoding with metadata carried over |
 | `internal/query` | `ImageQuery` (the one selection abstraction) and sort → SQL |
 | `internal/library` | image, tag and trash operations |
 | `internal/importer`, `internal/exporter`, `internal/backup` | transfer |
@@ -405,6 +483,8 @@ WebP, TIFF, BMP and GIF files, and junk files.
 | `internal/comfy` | ComfyUI API-format workflows (titles, overrides, canonical JSON), sweep and seed expansion, HTTP and websocket client, prompt runner, PNG prompt chunks, fake server for tests |
 | `internal/experiments` | workflow templates and versions, experiments, generation jobs, moving images to the library |
 | `internal/decks` | slide decks: membership, order and moves, slideshow settings |
+| `internal/files` | the files space: folders, chunked contents, uploads, import/export to disk, zips |
+| `internal/reencode` | re-encode batches: running them, results awaiting review, replacing originals |
 | `internal/tagger` | WD tagger client, the embedded Python server, its installer (Python discovery, venv, pip, Hugging Face downloads) and the on-demand local process |
 | `internal/jobs`, `internal/events`, `internal/server` | background jobs, SSE, HTTP API, security |
 | `internal/webui` | embedded build of `web/` |

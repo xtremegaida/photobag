@@ -18,6 +18,21 @@ export const SORT_FIELDS = [
 
 const DEFAULT_SORT: Sort = { field: "imported", desc: true };
 
+const MB = 1 << 20;
+
+/** The formats images are stored in, for filtering. */
+export const IMAGE_FORMATS = [
+  { value: "jpeg", label: "JPEG" },
+  { value: "png", label: "PNG" },
+  { value: "webp", label: "WebP" },
+  { value: "gif", label: "GIF" },
+  { value: "tiff", label: "TIFF" },
+  { value: "bmp", label: "BMP" },
+];
+
+/** Smallest-file-size choices for filtering, in MB. */
+export const MIN_SIZES = [0.5, 1, 2, 5, 10, 20, 50];
+
 /** Reads gallery filters and sort from the URL (tag=…&any=…&not=…&q=…&id=…). */
 export function parseGallery(sp: URLSearchParams, trash = false): GalleryState {
   const query: ImageQuery = {};
@@ -32,6 +47,10 @@ export function parseGallery(sp: URLSearchParams, trash = false): GalleryState {
   if (q) query.nameGlob = q;
   const text = sp.get("text");
   if (text) query.text = text;
+  const types = sp.getAll("type").filter((t) => IMAGE_FORMATS.some((f) => f.value === t));
+  if (types.length) query.formats = types;
+  const minMB = Number(sp.get("minmb"));
+  if (minMB > 0) query.minSize = Math.round(minMB * MB);
   const ids = sp.getAll("id").map(Number).filter((n) => Number.isInteger(n) && n > 0);
   if (ids.length) query.ids = ids;
   if (trash) query.scope = "trash";
@@ -57,6 +76,8 @@ export function galleryParams({ query, sort }: GalleryState): URLSearchParams {
   if (query.untagged) sp.set("untagged", "1");
   if (query.nameGlob) sp.set("q", query.nameGlob);
   if (query.text) sp.set("text", query.text);
+  for (const t of query.formats ?? []) sp.append("type", t);
+  if (query.minSize) sp.set("minmb", String(+(query.minSize / MB).toFixed(2)));
   for (const id of query.ids ?? []) sp.append("id", String(id));
   const field = sort.field || "imported";
   if (field !== DEFAULT_SORT.field) sp.set("sort", field);
@@ -77,6 +98,8 @@ export function hasFilters(q: ImageQuery): boolean {
     q.untagged ||
     q.nameGlob ||
     q.text?.trim() ||
+    q.formats?.length ||
+    q.minSize ||
     q.ids?.length
   );
 }

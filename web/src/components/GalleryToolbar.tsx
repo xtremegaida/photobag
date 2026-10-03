@@ -25,7 +25,7 @@ import {
 import { useEffect, useState } from "react";
 import { useMetrics, useStats } from "../api/hooks";
 import type { ImageQuery, Sort } from "../api/types";
-import { SORT_FIELDS } from "../lib/query-url";
+import { IMAGE_FORMATS, MIN_SIZES, SORT_FIELDS } from "../lib/query-url";
 import { useTagNames } from "./TagEditor";
 
 // Mantine reserves 100px for the search field, which wraps pills early.
@@ -173,6 +173,25 @@ export function GalleryToolbar({ query, sort, onChange, thumbSize, onThumbSize, 
         checked={!!query.untagged}
         onChange={(e) => onChange({ ...query, untagged: e.currentTarget.checked || undefined }, sort)}
         mb={8}
+      />
+      <MultiSelect
+        placeholder={query.formats?.length ? "" : "File types"}
+        data={IMAGE_FORMATS}
+        value={query.formats ?? []}
+        onChange={(v) => onChange({ ...query, formats: v.length ? v : undefined }, sort)}
+        clearable
+        w={200}
+        styles={compactField}
+        aria-label="File types"
+      />
+      <Select
+        placeholder="Any size"
+        data={MIN_SIZES.map((mb) => ({ value: String(mb * (1 << 20)), label: `≥ ${mb} MB` }))}
+        value={query.minSize ? String(query.minSize) : null}
+        onChange={(v) => onChange({ ...query, minSize: v ? Number(v) : undefined }, sort)}
+        clearable
+        w={135}
+        aria-label="Smallest file size"
       />
       <Group gap={4} wrap="nowrap" ml="auto" align="flex-end">
         <Select

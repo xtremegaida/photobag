@@ -168,6 +168,7 @@ export interface ImageScore {
 export interface Blob {
   Image: Image;
   Data: string /* []byte */;
+  Orientation: number /* int */;
 }
 
 //////////
@@ -218,11 +219,12 @@ export interface Tag {
 // source: trash.go
 
 /**
- * UnusedBlob is a condition on blobs: neither an image nor a generated
- * image held in an experiment uses it.
+ * UnusedBlob is a condition on blobs: neither an image, nor a generated
+ * image held in an experiment, nor a re-encode awaiting review uses it.
  */
 export const UnusedBlob = `NOT EXISTS (SELECT 1 FROM images WHERE images.blob_id = blobs.id)
-	AND NOT EXISTS (SELECT 1 FROM generations WHERE generations.blob_id = blobs.id)`;
+	AND NOT EXISTS (SELECT 1 FROM generations WHERE generations.blob_id = blobs.id)
+	AND NOT EXISTS (SELECT 1 FROM reencode_items WHERE reencode_items.new_blob_id = blobs.id)`;
 /**
  * PurgeResult summarises an empty-trash operation.
  */
