@@ -45,6 +45,8 @@ export type {
   Report as ImportReport,
   RefreshReport,
   ThumbReport,
+  UploadOffer,
+  UploadPlan,
 } from "./gen/importer";
 export type {
   FileReport as ExportFileReport,

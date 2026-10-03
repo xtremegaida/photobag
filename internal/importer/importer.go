@@ -41,6 +41,14 @@ type Options struct {
 	// originals that re-encoding replaced, instead of skipping them.
 	IncludeRemoved bool `json:"includeRemoved,omitempty"`
 
+	// Source names where the files came from, in place of the folder's
+	// path, when the folder is only their temporary home (uploads). The
+	// report then gives paths relative to the folder.
+	Source string `json:"-"`
+	// LeftOut reports files left out before the import (by the checks of
+	// an upload), counted with those skipped or failed.
+	LeftOut []FileReport `json:"-"`
+
 	Workers      int   `json:"-"`
 	MemoryBudget int64 `json:"-"`
 }
@@ -149,12 +157,16 @@ func Run(ctx context.Context, b *bag.Bag, root string, opts Options, progress fu
 	if progress == nil {
 		progress = func(Progress) {}
 	}
+	source := abs
+	if opts.Source != "" {
+		source = opts.Source
+	}
 	r := &run{
 		b: b, opts: opts, root: abs, progress: progress,
 		sem:      newWeighted(opts.MemoryBudget),
 		claims:   map[[32]byte]*claim{},
 		tagCache: map[string]int64{},
-		report:   Report{Source: abs, Files: []FileReport{}},
+		report:   Report{Source: source, Files: []FileReport{}},
 	}
 
 	// Scan.
@@ -169,9 +181,13 @@ func Run(ctx context.Context, b *bag.Bag, root string, opts Options, progress fu
 		files = []file{{path: abs, rel: filepath.Base(abs), size: st.Size(), mtime: st.ModTime().UnixMilli()}}
 		r.root = filepath.Dir(abs)
 	}
+	for _, fr := range opts.LeftOut {
+		r.addFile(fr)
+	}
 	r.mu.Lock()
-	r.prog.Found = len(files)
-	r.report.Found = len(files)
+	r.prog.Found = len(files) + len(opts.LeftOut)
+	r.prog.Done = len(opts.LeftOut)
+	r.report.Found = r.prog.Found
 	r.mu.Unlock()
 
 	if err := r.loadState(ctx); err != nil {
@@ -235,7 +251,7 @@ func (r *run) walk(ctx context.Context) ([]file, error) {
 			if path == r.root {
 				return err
 			}
-			r.addFile(FileReport{Path: path, Status: "failed", Reason: err.Error()})
+			r.addFile(FileReport{Path: r.reported(path), Status: "failed", Reason: err.Error()})
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
@@ -379,9 +395,21 @@ func (r *run) addFile(fr FileReport) {
 	}
 }
 
+// reported is how a file's path appears in the report: relative to the
+// folder when that is only the files' temporary home.
+func (r *run) reported(p string) string {
+	if r.opts.Source == "" {
+		return p
+	}
+	if rel, err := filepath.Rel(r.root, p); err == nil {
+		return filepath.ToSlash(rel)
+	}
+	return p
+}
+
 func (r *run) fileDone(f file, fr *FileReport) {
 	if fr != nil {
-		fr.Path = f.path
+		fr.Path = r.reported(f.path)
 		r.addFile(*fr)
 	}
 	r.mu.Lock()

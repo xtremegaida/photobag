@@ -104,5 +104,33 @@ export interface ThumbReport {
 }
 
 //////////
+// source: upload.go
+
+/**
+ * UploadOffer is a file a browser offers to upload for an import.
+ */
+export interface UploadOffer {
+  /**
+   * Path is the file's path as dropped: its name, below the names of
+   * the folders it was dropped with.
+   */
+  path: string;
+  size: number /* int64 */;
+  /**
+   * Head holds the file's first bytes (imaging.SniffLen of them), which
+   * tell whether it is an image.
+   */
+  head: string /* []byte */;
+}
+/**
+ * UploadPlan answers an offer: the files to leave out, and why. The rest
+ * are to be sent.
+ */
+export interface UploadPlan {
+  id: string;
+  skip: FileReport[];
+}
+
+//////////
 // source: writer.go
 

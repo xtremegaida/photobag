@@ -216,3 +216,13 @@ export function splitExt(name: string): [string, string] {
   if (i <= 0) return [name, ""];
   return [name.slice(0, i), name.slice(i)];
 }
+
+/**
+ * Names what was dropped by its top-level names: "Holiday", "Holiday and
+ * beach.jpg", "Holiday, beach.jpg and 3 more".
+ */
+export function describeDrop(entries: UploadEntry[]): string {
+  const tops = [...new Set(entries.map((e) => e.path.split("/")[0]).filter(Boolean))];
+  if (tops.length <= 2) return tops.join(" and ") || "files";
+  return `${tops[0]}, ${tops[1]} and ${tops.length - 2} more`;
+}

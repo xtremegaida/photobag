@@ -21,7 +21,8 @@ One self-contained binary (Windows and Linux) points at a bag, new or
 existing, and can:
 
 - **serve** an interactive web UI,
-- **import** a folder (optionally recursive),
+- **import** a folder (optionally recursive), or images and folders dropped
+  onto the page,
 - **export** to a folder,
 - **back up** the bag,
 - find **duplicates**, bit-identical or visually similar,
@@ -189,6 +190,16 @@ documentation, licences, anything that should travel with the library.
 
 ### Import
 
+- Import a folder on the machine running PhotoBag, or drop images and folders
+  onto the Import page (or choose them there) to upload them from the browser.
+  - Before uploading, the browser sends each file's name, size and first
+    bytes. Only images are sent; the rest appear in the import report.
+  - Uploads wait in a hidden folder next to the bag, which is imported with
+    the options below and then removed. Allow about twice their size in free
+    disk space.
+  - Dropped folders keep their names, so with folder tags a dropped
+    `Holiday` folder tags its images "Holiday".
+  - Leaving the page doesn't stop the upload; closing it does.
 - Files are recognised by content, not by extension. Supported formats:
   **JPEG, PNG, GIF, WebP, BMP, TIFF**.
   - Animated GIF and WebP use their first frame for thumbnails.

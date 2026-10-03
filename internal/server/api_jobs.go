@@ -16,6 +16,7 @@ import (
 	"photobag/internal/backup"
 	"photobag/internal/exporter"
 	"photobag/internal/importer"
+	"photobag/internal/jobs"
 	"photobag/internal/library"
 	"photobag/internal/sysutil"
 )
@@ -72,9 +73,17 @@ func (s *Server) startImport(w http.ResponseWriter, r *http.Request) error {
 	if _, err := os.Stat(p); err != nil {
 		return badRequest(err)
 	}
-	opts := req.Options
-	job := s.jobs.Submit("import", "Import "+p, func(ctx context.Context, report func(any, string)) (any, error) {
-		rep, err := importer.Run(ctx, s.b, p, opts, func(pr importer.Progress) {
+	return ok(w, s.submitImport(p, p, req.Options, nil))
+}
+
+// submitImport queues the import of a folder; after (if set) runs when the
+// job ends, however it ends.
+func (s *Server) submitImport(title, dir string, opts importer.Options, after func()) jobs.Job {
+	return s.jobs.Submit("import", "Import "+title, func(ctx context.Context, report func(any, string)) (any, error) {
+		if after != nil {
+			defer after()
+		}
+		rep, err := importer.Run(ctx, s.b, dir, opts, func(pr importer.Progress) {
 			report(pr, pr.Current)
 			if pr.Phase == "importing" && pr.Added > 0 && pr.Added%100 == 0 {
 				s.events.Changed("images", "tags")
@@ -83,7 +92,6 @@ func (s *Server) startImport(w http.ResponseWriter, r *http.Request) error {
 		s.events.Changed("images", "tags")
 		return rep, err
 	})
-	return ok(w, job)
 }
 
 func (s *Server) startExport(w http.ResponseWriter, r *http.Request) error {

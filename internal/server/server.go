@@ -94,6 +94,9 @@ type Server struct {
 	backupsMu sync.Mutex
 	backups   map[string]*pendingBackup
 
+	uploadsMu sync.Mutex
+	uploads   map[string]*importUpload
+
 	tagOnce sync.Once
 	tag     string
 }
@@ -140,6 +143,7 @@ func New(b *bag.Bag, cfg Config) *Server {
 			OnChange: func() { ev.Changed("tagger") }},
 		ctx: ctx, cancel: cancel,
 		backups: map[string]*pendingBackup{},
+		uploads: map[string]*importUpload{},
 		genJobs: map[int64]string{},
 	}
 }
@@ -214,6 +218,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 	}
 	backup.CleanStale(s.b.Path)
+	importer.CleanUploads(s.b.Path)
 	s.bagTag() // before any job can keep the bag's writer busy
 	if err := files.Tidy(ctx, s.b); err != nil {
 		s.log.Warn("could not tidy up interrupted file uploads", "err", err)
@@ -233,7 +238,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	go s.watchExternalChanges()
 	go s.idleCheckpoint()
 	s.refreshIfOutdated()
-	go s.expireBackups()
+	go s.expireTemporaryFiles()
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(s.ln) }()
 	var err error
@@ -248,6 +253,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	s.jobs.Wait()
 	s.tagger.Close()
 	s.cleanupBackups()
+	s.expireUploads(true)
 	if errors.Is(err, http.ErrServerClosed) {
 		err = nil
 	}
@@ -322,7 +328,9 @@ func (s *Server) idleCheckpoint() {
 	}
 }
 
-func (s *Server) expireBackups() {
+// expireTemporaryFiles removes backups not downloaded in time, and files
+// uploaded for imports that will not happen.
+func (s *Server) expireTemporaryFiles() {
 	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
 	for {
@@ -331,6 +339,7 @@ func (s *Server) expireBackups() {
 			return
 		case <-t.C:
 		}
+		s.expireUploads(false)
 		s.backupsMu.Lock()
 		for tok, p := range s.backups {
 			if time.Now().After(p.expires) {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createBatcher } from "../api/batcher";
 import { tagged } from "../api/client";
 import type { ReencodeItem } from "../api/types";
-import { decodeText, encodeText, isClutter, lineEnding, resolveNoteLink, splitExt, withLineEnding } from "./files";
+import { decodeText, describeDrop, encodeText, isClutter, lineEnding, resolveNoteLink, splitExt, withLineEnding } from "./files";
 import { DEFAULT_REENCODE, defaultMode, describeReencode, pickItems, psnrLabel, sizeChange } from "./reencode";
 import { formatBytes, formatTaken, percent } from "./format";
 import type { AnalysisSettings, TaggerStatus } from "../api/types";
@@ -349,6 +349,14 @@ describe("files", () => {
     expect(splitExt(".gitignore")).toEqual([".gitignore", ""]);
     expect(splitExt("README")).toEqual(["README", ""]);
     expect(isClutter(".DS_Store") && isClutter("Thumbs.db") && !isClutter("notes.md")).toBe(true);
+  });
+
+  it("names what was dropped by its top-level names", () => {
+    const drop = (...paths: string[]) => paths.map((path) => ({ path, file: new File([], path.split("/").pop()!) }));
+    expect(describeDrop(drop("a.jpg"))).toBe("a.jpg");
+    expect(describeDrop(drop("Trip/a.jpg", "Trip/b/c.jpg"))).toBe("Trip");
+    expect(describeDrop(drop("Trip/a.jpg", "x.png"))).toBe("Trip and x.png");
+    expect(describeDrop(drop("Trip/a.jpg", "x.png", "y.png", "z.png"))).toBe("Trip, x.png and 2 more");
   });
 });
 
